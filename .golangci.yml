@@ -37,11 +37,10 @@ linters:
       - third_party$
       - builtin$
       - examples$
-
-linters-settings:
-  revive:
-    rules:
-      - name: exported
+  settings:
+    revive:
+      rules:
+        - name: exported
 
 issues:
   max-issues-per-linter: 0
