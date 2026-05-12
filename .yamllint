@@ -1,0 +1,26 @@
+# keep in sync with sso-common.
+# See https://bitbucket.svc.elca.ch/projects/ELCA-SSO/repos/sso-common/browse/README.md
+
+extends: default
+
+rules:
+  braces:
+    min-spaces-inside: 1
+    max-spaces-inside: 1
+    min-spaces-inside-empty: 0
+    max-spaces-inside-empty: 0
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+    min-spaces-inside-empty: 0
+    max-spaces-inside-empty: 0
+  document-end: disable
+  document-start: disable
+  line-length: disable
+  comments-indentation: false
+
+  # Custom blocks
+  indentation:
+    indent-sequences: consistent
+  truthy:
+    allowed-values: ["yes", "no", "true", "false"]

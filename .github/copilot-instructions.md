@@ -1,0 +1,9 @@
+- Always prioritize correctness over brevity
+- Generated code must compile and pass `go vet`
+- Avoid introducing breaking changes unless explicitly requested
+- Prefer explicit, readable code over clever abstractions
+- Always include error handling
+- Never ignore returned errors
+- The cyclomatic complexity of generated code should be as low as possible
+- Do not create function with cognitive complexity of generated code greater than 15.
+- Use constants and types where appropriate to improve readability and maintainability

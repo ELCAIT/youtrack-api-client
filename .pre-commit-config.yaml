@@ -1,0 +1,53 @@
+# keep in sync with sso-common repo.
+# See https://bitbucket.svc.elca.ch/projects/ELCA-SSO/repos/sso-common/browse/README.md
+
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+exclude: |
+  (?x)^(
+    github-orgs/generated/.*|
+  )$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-yaml
+        args:
+          - --allow-multiple-documents
+      - id: debug-statements
+      - id: destroyed-symlinks
+      - id: detect-private-key
+        exclude: certs/dev/ca-key.pem
+      - id: end-of-file-fixer
+        exclude: ^[^/]+/[^/]+\.json$
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+      - id: codespell
+        args:
+          - --ignore-words-list=afterall,AKS,aks,BUI,bui
+        exclude: (cert.pem|.pem.text|sp_.*)
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args:
+          - "-fparsable"
+  #  TODO : add golangci-lint in pre-commit container image, then enable the hook below.
+  # - repo: local
+  #   hooks:
+  #     - id: golangci-lint
+  #       name: golangci-lint
+  #       entry: golangci-lint.sh
+  #       exclude: ".*"
+  #       language: script
+  #       always_run: true

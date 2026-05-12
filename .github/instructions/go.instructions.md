@@ -1,0 +1,21 @@
+---
+applyTo: "**/*.go"
+---
+
+- Follow standard Go conventions (gofmt, go vet, idiomatic naming)
+- Do not use global mutable state
+- Prefer small, testable functions
+- Always propagate context.Context
+- Use structured error handling (fmt.Errorf with %w)
+- Avoid panics except in truly unrecoverable situations
+- Write table-driven tests when generating tests
+- Ensure code passes golangci-lint
+- Prefer interfaces for external dependencies
+- Avoid reflection unless absolutely necessary
+- Do not duplicate code
+- Use helper functions where appropriate
+- Follow Go conventions and idiomatic patterns
+- Do not generate functions that are unused or unnecessary
+- Use max 7 parameters for functions
+- IMPORTANT: do not duplicate string literals; always extract to constants
+- Use Value* methods to handle null/unknown values

@@ -1,0 +1,11 @@
+# for artifactory package resolution
+export GOPROXY="https://artifactory.svc.elca.ch/artifactory/api/go/v-go-public"
+
+# install golangci-lint in go Path
+curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.10.1
+
+# package install (for documentation and pre-commit hooks)
+uv self update
+uv python install $(cat .python-version) --force
+uv sync
+PATH_add .venv/bin

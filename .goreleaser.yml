@@ -1,0 +1,29 @@
+# Visit https://goreleaser.com for documentation on how to customize this
+# behavior.
+version: 2
+project_name: youtrack-api-client
+builds:
+  skip: true
+
+release:
+  github:
+    owner: sflotron
+    name: youtrack-api-client
+  draft: false
+  prerelease: auto
+  header: |
+    ## Release Notes
+
+    This release was generated automatically from tagged commits.
+  footer: |
+    **Full Changelog**: https://github.com/sflotron/youtrack-api-client/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+

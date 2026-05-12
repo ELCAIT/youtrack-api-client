@@ -1,0 +1,58 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - durationcheck
+    - errcheck
+    - forcetypeassert
+    - gosec
+    - govet
+    - ineffassign
+    - makezero
+    - misspell
+    - nilerr
+    - predeclared
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # G107: URL provided to HTTP request as taint input.
+      # G704: SSRF via taint analysis (HostURL flows into HTTPClient.Do).
+      # The HostURL is intentionally user-supplied (Terraform provider configuration).
+      # Suppressing both SSRF rules in the client layer where all API calls are made.
+      - linters:
+          - gosec
+        text: "G107|G704"
+        path: "client/"
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
