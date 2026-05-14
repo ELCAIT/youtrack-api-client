@@ -32,13 +32,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create and push tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          git tag -- "$TAG"
-          git push origin "refs/tags/$TAG"
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8
         with:
