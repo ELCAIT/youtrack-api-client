@@ -33,6 +33,18 @@ func isRetryableMembershipEndpointError(err error) bool {
 	return httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusMethodNotAllowed
 }
 
+func (c *Client) sendMembershipRequest(ctx context.Context, method, endpoint string, body []byte) error {
+	reader := bytes.NewReader(body)
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.doRequest(req)
+	return err
+}
+
 // CreateUser creates a user using Hub-style lifecycle semantics.
 func (c *Client) CreateUser(ctx context.Context, user User) (*User, error) {
 	rb, err := json.Marshal(user)
@@ -115,57 +127,44 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 		return fmt.Errorf("failed to marshal add user to group payload: %w", err)
 	}
 
-	post := func(endpoint string) error {
-		req, reqErr := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
-		if reqErr != nil {
-			return reqErr
-		}
-		_, reqErr = c.doRequest(req)
-		return reqErr
+	type membershipAttempt struct {
+		method   string
+		endpoint string
+		body     []byte
 	}
 
-	postNoBody := func(endpoint string) error {
-		req, reqErr := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, nil)
-		if reqErr != nil {
-			return reqErr
-		}
-		_, reqErr = c.doRequest(req)
-		return reqErr
-	}
-
-	putNoBody := func(endpoint string) error {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, nil)
-		if reqErr != nil {
-			return reqErr
-		}
-		_, reqErr = c.doRequest(req)
-		return reqErr
-	}
-
-	attempts := []func() error{
-		func() error {
-			return post(fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, hubUserLifecycleFields))
+	attempts := []membershipAttempt{
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, hubUserLifecycleFields),
+			body:     rb,
 		},
-		func() error {
-			return post(fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, hubUserLifecycleFields))
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, hubUserLifecycleFields),
+			body:     rb,
 		},
-		func() error {
-			return postNoBody(fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID))
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
 		},
-		func() error {
-			return postNoBody(fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID))
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
 		},
-		func() error {
-			return putNoBody(fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID))
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
 		},
-		func() error {
-			return putNoBody(fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID))
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
 		},
 	}
 
 	var lastErr error
 	for _, attempt := range attempts {
-		err := attempt()
+		err := c.sendMembershipRequest(ctx, attempt.method, attempt.endpoint, attempt.body)
 		if err == nil {
 			return nil
 		}
