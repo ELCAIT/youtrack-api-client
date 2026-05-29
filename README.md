@@ -46,3 +46,42 @@ func main() {
 	log.Printf("Found user %s (%s)", user.Login, user.ID)
 }
 ```
+
+## Integration Tests
+
+Integration tests are opt-in and require a reachable YouTrack instance.
+
+Set the following environment variables:
+
+- `YOUTRACK_RUN_INTEGRATION_TESTS=1`
+- `YOUTRACK_BASE_URL=https://your-youtrack.example.com`
+- `YOUTRACK_TOKEN=perm:your-token`
+- Optional: `YOUTRACK_RUN_HUB_INTEGRATION_TESTS=1` (enables Hub-style user/group membership lifecycle tests)
+- Optional: `YOUTRACK_TEST_USER_PASSWORD=StrongPassword123!`
+
+Run only integration tests:
+
+```bash
+YOUTRACK_RUN_INTEGRATION_TESTS=1 \
+YOUTRACK_BASE_URL="https://your-youtrack.example.com" \
+YOUTRACK_TOKEN="perm:your-token" \
+go test ./client -run TestIntegration -v
+```
+
+The integration suite is split into:
+
+- YouTrack API suite (`TestIntegrationYouTrack...`): safe YouTrack resource lifecycle checks.
+- Hub-dependent suite (`TestIntegrationHub...`): user lifecycle and group membership checks that rely on Hub semantics.
+
+Enable Hub-dependent tests only when your instance exposes/permits these operations:
+
+```bash
+YOUTRACK_RUN_INTEGRATION_TESTS=1 \
+YOUTRACK_RUN_HUB_INTEGRATION_TESTS=1 \
+YOUTRACK_BASE_URL="https://your-youtrack.example.com" \
+YOUTRACK_TOKEN="perm:your-token" \
+go test ./client -run TestIntegrationHub -v
+```
+
+If `YOUTRACK_TEST_USER_PASSWORD` is not set, the tests generate a strong default
+password for created users.

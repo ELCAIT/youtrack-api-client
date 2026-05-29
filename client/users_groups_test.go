@@ -380,11 +380,18 @@ func TestDeleteUser(t *testing.T) {
 		t.Parallel()
 
 		client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
+				return
+			}
 			if r.Method != http.MethodDelete {
 				t.Fatalf(errUnexpectedMethod, r.Method)
 			}
 			if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
+			}
+			if r.URL.Query().Get("successor") == "" {
+				t.Fatal("expected successor query parameter")
 			}
 			w.WriteHeader(http.StatusNoContent)
 		})
@@ -399,6 +406,10 @@ func TestDeleteUser(t *testing.T) {
 		t.Parallel()
 
 		client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
+				return
+			}
 			w.WriteHeader(http.StatusNotFound)
 		})
 		defer server.Close()
@@ -418,7 +429,7 @@ func TestAddUserToGroup(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf(errUnexpectedMethod, r.Method)
 		}
-		if !strings.HasSuffix(r.URL.Path, "/api/groups/"+testGroupID+"/users") {
+		if !strings.HasSuffix(r.URL.Path, "/api/usergroups/"+testGroupID+"/users") {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 
@@ -451,7 +462,7 @@ func TestRemoveUserFromGroup(t *testing.T) {
 			if r.Method != http.MethodDelete {
 				t.Fatalf(errUnexpectedMethod, r.Method)
 			}
-			if !strings.HasSuffix(r.URL.Path, "/api/groups/"+testGroupID+"/users/"+testUserID) {
+			if !strings.HasSuffix(r.URL.Path, "/api/usergroups/"+testGroupID+"/users/"+testUserID) {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
 			}
 			w.WriteHeader(http.StatusNoContent)

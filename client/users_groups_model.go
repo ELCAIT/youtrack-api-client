@@ -2,28 +2,30 @@ package youtrack
 
 // User represents a user in YouTrack
 type User struct {
-	ID       string `json:"id"`
-	Login    string `json:"login"`
-	FullName string `json:"fullName"`
-	Email    string `json:"email"`
+	ID       string `json:"id,omitempty"`
+	RingID   string `json:"ringId,omitempty"`
+	Login    string `json:"login,omitempty"`
+	FullName string `json:"fullName,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Password string `json:"password,omitempty"`
 }
 
 // NestedGroup represents a nested group in YouTrack
 type NestedGroup struct {
-	ID                   string        `json:"id"`
-	Description          string        `json:"description"`
-	ParentGroup          *NestedGroup  `json:"parentGroup"`
-	SubGroups            []NestedGroup `json:"subGroups"`
-	OwnUsers             []User        `json:"ownUsers"`
-	RequireTwoFactorAuth bool          `json:"requireTwoFactorAuthentication"`
-	Viewers              []Holder      `json:"viewers"`
-	Updaters             []Holder      `json:"updaters"`
-	AutoJoin             bool          `json:"autoJoin"`
-	AutoJoinDomain       string        `json:"autoJoinDomain"`
-	Name                 string        `json:"name"`
-	RingId               string        `json:"ringId"`
-	Icon                 string        `json:"icon"`
-	AllUsersGroup        bool          `json:"allUsersGroup"`
-	UsersCount           int64         `json:"usersCount"`
-	Users                []User        `json:"users"`
+	ID                   string        `json:"id,omitempty"`
+	Description          string        `json:"description,omitempty"`
+	ParentGroup          *NestedGroup  `json:"parentGroup,omitempty"`
+	SubGroups            []NestedGroup `json:"subGroups,omitempty"`
+	OwnUsers             []User        `json:"ownUsers,omitempty"`
+	RequireTwoFactorAuth bool          `json:"requireTwoFactorAuthentication,omitempty"`
+	Viewers              []Holder      `json:"viewers,omitempty"`
+	Updaters             []Holder      `json:"updaters,omitempty"`
+	AutoJoin             bool          `json:"autoJoin,omitempty"`
+	AutoJoinDomain       string        `json:"autoJoinDomain,omitempty"`
+	Name                 string        `json:"name,omitempty"`
+	RingId               string        `json:"ringId,omitempty"`
+	Icon                 string        `json:"icon,omitempty"`
+	AllUsersGroup        bool          `json:"allUsersGroup,omitempty"`
+	UsersCount           int64         `json:"usersCount,omitempty"`
+	Users                []User        `json:"users,omitempty"`
 }
