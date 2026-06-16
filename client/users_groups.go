@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +22,79 @@ const (
 	allYoutrackGroups        = pathWithFieldsFormat
 	specificYoutrackGroup    = "%s/%s/%s?%s"
 )
+
+func withPagination(fields string, top, skip int) string {
+	values := url.Values{}
+	values.Set("fields", fields)
+	if top > 0 {
+		values.Set("$top", strconv.Itoa(top))
+	}
+	if skip > 0 {
+		values.Set("$skip", strconv.Itoa(skip))
+	}
+
+	return values.Encode()
+}
+
+// ListUsers returns users and supports optional pagination via top/skip.
+// Pass 0 for top and skip to use the default server-side pagination.
+func (c *Client) ListUsers(ctx context.Context, top, skip int) ([]Holder, error) {
+	query := withPagination("id,name,login,$type", top, skip)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackUsers, c.HostURL, youtrackUsersAPIPath, query), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list users request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+
+	var users []Holder
+	err = json.Unmarshal(body, &users)
+	if err == nil {
+		return users, nil
+	}
+
+	var response struct {
+		Users []Holder `json:"users"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal list users response: %w", err)
+	}
+
+	return response.Users, nil
+}
+
+// ListGroups returns groups and supports optional pagination via top/skip.
+// Pass 0 for top and skip to use the default server-side pagination.
+func (c *Client) ListGroups(ctx context.Context, top, skip int) ([]Holder, error) {
+	query := withPagination("id,name,$type", top, skip)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackGroups, c.HostURL, youtrackGroupsAPIPath, query), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list groups request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups: %w", err)
+	}
+
+	var groups []Holder
+	err = json.Unmarshal(body, &groups)
+	if err == nil {
+		return groups, nil
+	}
+
+	var response struct {
+		Groups []Holder `json:"usergroups"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal list groups response: %w", err)
+	}
+
+	return response.Groups, nil
+}
 
 // GetUserByLogin - Returns a user by login (username).
 func (c *Client) GetUserByLogin(ctx context.Context, login string) (*Holder, error) {

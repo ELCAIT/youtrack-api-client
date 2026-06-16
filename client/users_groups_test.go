@@ -2,7 +2,9 @@ package youtrack
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +15,8 @@ const (
 	testUserID          = "user-1"
 	testOtherUserID     = "user-2"
 	testOtherUserLogin  = "bob"
+	testUserFullName    = "Alice Doe"
+	testUserEmail       = "alice@example.com"
 	testAllUsersGroupID = "group-all"
 	testDevelopersGroup = "Developers"
 )
@@ -239,4 +243,259 @@ func TestDeleteGroup(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- ListUsers ---
+
+func TestListUsers(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		query := r.URL.Query()
+		if query.Get("$top") != "25" {
+			t.Fatalf("unexpected $top: got %q, want %q", query.Get("$top"), "25")
+		}
+		if query.Get("$skip") != "50" {
+			t.Fatalf("unexpected $skip: got %q, want %q", query.Get("$skip"), "50")
+		}
+		if !strings.Contains(query.Get("fields"), "login") {
+			t.Fatalf("unexpected fields: %q", query.Get("fields"))
+		}
+
+		encodeJSON(t, w, []Holder{{Id: testUserID, Login: testUserLogin}})
+	})
+	defer server.Close()
+
+	users, err := client.ListUsers(context.Background(), 25, 50)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("unexpected number of users: got %d, want 1", len(users))
+	}
+	if users[0].Id != testUserID {
+		t.Fatalf(fmtUnexpectedID, users[0].Id, testUserID)
+	}
+}
+
+// --- ListGroups ---
+
+func TestListGroups(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		query := r.URL.Query()
+		if query.Get("$top") != "10" {
+			t.Fatalf("unexpected $top: got %q, want %q", query.Get("$top"), "10")
+		}
+		if query.Get("$skip") != "" {
+			t.Fatalf("unexpected $skip: got %q, want empty", query.Get("$skip"))
+		}
+
+		encodeJSON(t, w, []Holder{{Id: testGroupID, Name: testGroupName}})
+	})
+	defer server.Close()
+
+	groups, err := client.ListGroups(context.Background(), 10, 0)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("unexpected number of groups: got %d, want 1", len(groups))
+	}
+	if groups[0].Id != testGroupID {
+		t.Fatalf(fmtUnexpectedID, groups[0].Id, testGroupID)
+	}
+}
+
+// --- CreateUser ---
+
+func TestCreateUser(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		if !strings.Contains(string(body), testUserLogin) {
+			t.Fatalf("request body does not contain login %q: %s", testUserLogin, string(body))
+		}
+
+		encodeJSON(t, w, User{ID: testUserID, Login: testUserLogin, FullName: testUserFullName, Email: testUserEmail})
+	})
+	defer server.Close()
+
+	created, err := client.CreateUser(context.Background(), User{Login: testUserLogin, FullName: testUserFullName, Email: testUserEmail})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if created.ID != testUserID {
+		t.Fatalf(fmtUnexpectedID, created.ID, testUserID)
+	}
+}
+
+// --- UpdateUser ---
+
+func TestUpdateUser(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		encodeJSON(t, w, User{ID: testUserID, Login: testUserLogin, FullName: "Alice Updated", Email: testUserEmail})
+	})
+	defer server.Close()
+
+	updated, err := client.UpdateUser(context.Background(), testUserID, User{FullName: "Alice Updated"})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if updated.FullName != "Alice Updated" {
+		t.Fatalf("unexpected fullName: got %q, want %q", updated.FullName, "Alice Updated")
+	}
+}
+
+// --- DeleteUser ---
+
+func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bool) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
+			return
+		}
+
+		if r.Method != http.MethodDelete {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+
+		if validateDeleteRequest {
+			if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
+				t.Fatalf("unexpected path: %s", r.URL.Path)
+			}
+			if r.URL.Query().Get("successor") == "" {
+				t.Fatal("expected successor query parameter")
+			}
+		}
+
+		w.WriteHeader(statusCode)
+	}
+}
+
+func TestDeleteUser(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                  string
+		statusCode            int
+		validateDeleteRequest bool
+	}{
+		{
+			name:                  "success",
+			statusCode:            http.StatusNoContent,
+			validateDeleteRequest: true,
+		},
+		{
+			name:       "404 is ignored",
+			statusCode: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, newDeleteUserHandler(t, tc.statusCode, tc.validateDeleteRequest))
+			defer server.Close()
+
+			if err := client.DeleteUser(context.Background(), testUserID); err != nil {
+				t.Fatalf(fmtUnexpectedError, err)
+			}
+		})
+	}
+}
+
+// --- AddUserToGroup ---
+
+func TestAddUserToGroup(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/api/usergroups/"+testGroupID+"/users") {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		if !strings.Contains(string(body), testUserID) {
+			t.Fatalf("request body does not contain user id %q: %s", testUserID, string(body))
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+	defer server.Close()
+
+	if err := client.AddUserToGroup(context.Background(), testGroupID, testUserID); err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+}
+
+// --- RemoveUserFromGroup ---
+
+func TestRemoveUserFromGroup(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodDelete {
+				t.Fatalf(errUnexpectedMethod, r.Method)
+			}
+			if !strings.HasSuffix(r.URL.Path, "/api/usergroups/"+testGroupID+"/users/"+testUserID) {
+				t.Fatalf("unexpected path: %s", r.URL.Path)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})
+		defer server.Close()
+
+		if err := client.RemoveUserFromGroup(context.Background(), testGroupID, testUserID); err != nil {
+			t.Fatalf(fmtUnexpectedError, err)
+		}
+	})
+
+	t.Run("404 is ignored", func(t *testing.T) {
+		t.Parallel()
+
+		client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		})
+		defer server.Close()
+
+		if err := client.RemoveUserFromGroup(context.Background(), testGroupID, testUserID); err != nil {
+			t.Fatalf(fmtUnexpectedError, err)
+		}
+	})
 }
