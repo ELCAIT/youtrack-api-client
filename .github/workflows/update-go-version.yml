@@ -1,0 +1,31 @@
+name: Update Go version
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  update-go-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Update go version in go.mod
+        run: go get go@$(go env GOVERSION | sed 's/go//')
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore(deps): update go version"
+          title: "chore(deps): update go version"
+          branch: update-go-version
+          delete-branch: true
+          labels: dependencies
