@@ -1,3 +1,17 @@
+## 1.1.0
+
+FEATURES:
+- Create/update/delete users
+- Create/update/delete groups
+- Add/remove users from groups
+- List users and groups with pagination
+
+IMPROVEMENTS:
+- Add integration tests for user and group management.
+- Update dependencies.
+
+BUG FIXES:
+
 ## 1.0.2
 FEATURES:
 
