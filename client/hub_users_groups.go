@@ -47,6 +47,7 @@ func (c *Client) sendMembershipRequest(ctx context.Context, method, endpoint str
 
 // CreateUser creates a user using Hub-style lifecycle semantics.
 func (c *Client) CreateUser(ctx context.Context, user User) (*User, error) {
+	// #nosec G117 -- password is intentionally sent to the Hub API when creating users.
 	rb, err := json.Marshal(user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal user payload: %w", err)
@@ -72,6 +73,7 @@ func (c *Client) CreateUser(ctx context.Context, user User) (*User, error) {
 
 // UpdateUser updates a user using Hub-style lifecycle semantics.
 func (c *Client) UpdateUser(ctx context.Context, userID string, user User) (*User, error) {
+	// #nosec G117 -- password is intentionally sent to the Hub API when updating users.
 	rb, err := json.Marshal(user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal update user payload: %w", err)
@@ -206,7 +208,6 @@ func (c *Client) RemoveUserFromGroup(ctx context.Context, groupID, userID string
 			lastErr = err
 			continue
 		}
-		allRetryable = false
 		return fmt.Errorf("failed to remove user from group: %w", err)
 	}
 
