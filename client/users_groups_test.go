@@ -373,51 +373,63 @@ func TestUpdateUser(t *testing.T) {
 
 // --- DeleteUser ---
 
-func TestDeleteUser(t *testing.T) {
-	t.Parallel()
+func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bool) http.HandlerFunc {
+	t.Helper()
 
-	t.Run("success", func(t *testing.T) {
-		t.Parallel()
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
+			return
+		}
 
-		client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodGet {
-				encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
-				return
-			}
-			if r.Method != http.MethodDelete {
-				t.Fatalf(errUnexpectedMethod, r.Method)
-			}
+		if r.Method != http.MethodDelete {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+
+		if validateDeleteRequest {
 			if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
 			}
 			if r.URL.Query().Get("successor") == "" {
 				t.Fatal("expected successor query parameter")
 			}
-			w.WriteHeader(http.StatusNoContent)
-		})
-		defer server.Close()
-
-		if err := client.DeleteUser(context.Background(), testUserID); err != nil {
-			t.Fatalf(fmtUnexpectedError, err)
 		}
-	})
 
-	t.Run("404 is ignored", func(t *testing.T) {
-		t.Parallel()
+		w.WriteHeader(statusCode)
+	}
+}
 
-		client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodGet {
-				encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
-				return
+func TestDeleteUser(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                  string
+		statusCode            int
+		validateDeleteRequest bool
+	}{
+		{
+			name:                  "success",
+			statusCode:            http.StatusNoContent,
+			validateDeleteRequest: true,
+		},
+		{
+			name:       "404 is ignored",
+			statusCode: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, newDeleteUserHandler(t, tc.statusCode, tc.validateDeleteRequest))
+			defer server.Close()
+
+			if err := client.DeleteUser(context.Background(), testUserID); err != nil {
+				t.Fatalf(fmtUnexpectedError, err)
 			}
-			w.WriteHeader(http.StatusNotFound)
 		})
-		defer server.Close()
-
-		if err := client.DeleteUser(context.Background(), testUserID); err != nil {
-			t.Fatalf(fmtUnexpectedError, err)
-		}
-	})
+	}
 }
 
 // --- AddUserToGroup ---
