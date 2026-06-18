@@ -1,5 +1,12 @@
 ## 1.1.0
+FEATURES:
 
+IMPROVEMENTS:
+- Add default values for project custom field bundles
+
+BUG FIXES:
+
+## 1.1.0
 FEATURES:
 - Create/update/delete users
 - Create/update/delete groups

@@ -16,7 +16,7 @@ const (
 	projectFieldsParam = "fields=id,name,shortName,description,leader(id,login,name),archived,template,fromEmail,replyToEmail,$type"
 
 	projectCustomFieldsSubPath = "customFields"
-	projectCustomFieldFields   = "fields=id,field(id,name),bundle(id,name,$type),canBeEmpty,emptyFieldText,isPublic,$type"
+	projectCustomFieldFields   = "fields=id,field(id,name),bundle(id,name,$type),defaultValues(id,name,$type),canBeEmpty,emptyFieldText,isPublic,$type"
 	projectCustomFieldByIDFmt  = "%s/%s/%s/%s/%s?%s"
 	projectCustomFieldsListFmt = "%s/%s/%s/%s?%s"
 
@@ -77,25 +77,34 @@ type CustomFieldIDRef struct {
 	Type string `json:"$type,omitempty"`
 }
 
+// ProjectCustomFieldValueRef is a minimal reference to a project custom field default value.
+type ProjectCustomFieldValueRef struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	Type string `json:"$type,omitempty"`
+}
+
 // ProjectCustomField represents a custom field attached to a project.
 type ProjectCustomField struct {
-	ID             string            `json:"id,omitempty"`
-	Field          *CustomFieldIDRef `json:"field,omitempty"`
-	Bundle         *BundleRef        `json:"bundle,omitempty"`
-	CanBeEmpty     bool              `json:"canBeEmpty,omitempty"`
-	EmptyFieldText string            `json:"emptyFieldText,omitempty"`
-	IsPublic       bool              `json:"isPublic,omitempty"`
-	Type           string            `json:"$type,omitempty"`
+	ID             string                       `json:"id,omitempty"`
+	Field          *CustomFieldIDRef            `json:"field,omitempty"`
+	Bundle         *BundleRef                   `json:"bundle,omitempty"`
+	DefaultValues  []ProjectCustomFieldValueRef `json:"defaultValues,omitempty"`
+	CanBeEmpty     bool                         `json:"canBeEmpty,omitempty"`
+	EmptyFieldText string                       `json:"emptyFieldText,omitempty"`
+	IsPublic       bool                         `json:"isPublic,omitempty"`
+	Type           string                       `json:"$type,omitempty"`
 }
 
 // ProjectCustomFieldUpsertPayload is the request body for attaching or updating a project custom field.
 type ProjectCustomFieldUpsertPayload struct {
-	Field          *CustomFieldIDRef `json:"field,omitempty"`
-	Bundle         *BundleRef        `json:"bundle,omitempty"`
-	CanBeEmpty     *bool             `json:"canBeEmpty,omitempty"`
-	EmptyFieldText string            `json:"emptyFieldText,omitempty"`
-	IsPublic       *bool             `json:"isPublic,omitempty"`
-	Type           string            `json:"$type,omitempty"`
+	Field          *CustomFieldIDRef            `json:"field,omitempty"`
+	Bundle         *BundleRef                   `json:"bundle,omitempty"`
+	DefaultValues  []ProjectCustomFieldValueRef `json:"defaultValues,omitempty"`
+	CanBeEmpty     *bool                        `json:"canBeEmpty,omitempty"`
+	EmptyFieldText string                       `json:"emptyFieldText,omitempty"`
+	IsPublic       *bool                        `json:"isPublic,omitempty"`
+	Type           string                       `json:"$type,omitempty"`
 }
 
 // ProjectCustomFieldTimeRef is a reference to a ProjectCustomField used in time tracking settings.
