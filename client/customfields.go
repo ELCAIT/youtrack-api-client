@@ -16,7 +16,7 @@ const (
 	customFieldPagePath    = "%s/%s?%s&$top=%d&$skip=%d"
 	customFieldFieldsParam = "fields=id,name,localizedName,aliases,fieldType(id,presentation)," +
 		"isAutoAttached,isDisplayedInIssueList,ordinal,isUpdateable,hasRunningJob," +
-		"fieldDefaults(id,canBeEmpty,emptyFieldText,isPublic,bundle(id,name)),$type"
+		"fieldDefaults(id,canBeEmpty,emptyFieldText,isPublic,bundle(id,name),defaultValues(id,name,$type)),$type"
 	customFieldNameFields = "fields=id,name"
 	customFieldPageSize   = 100
 
@@ -41,12 +41,13 @@ type BundleRef struct {
 
 // CustomFieldDefaults represents the default settings for a custom field.
 type CustomFieldDefaults struct {
-	ID             string     `json:"id,omitempty"`
-	CanBeEmpty     bool       `json:"canBeEmpty,omitempty"`
-	EmptyFieldText string     `json:"emptyFieldText,omitempty"`
-	IsPublic       bool       `json:"isPublic,omitempty"`
-	Bundle         *BundleRef `json:"bundle,omitempty"`
-	Type           string     `json:"$type,omitempty"`
+	ID             string                       `json:"id,omitempty"`
+	CanBeEmpty     bool                         `json:"canBeEmpty,omitempty"`
+	EmptyFieldText string                       `json:"emptyFieldText,omitempty"`
+	IsPublic       bool                         `json:"isPublic,omitempty"`
+	Bundle         *BundleRef                   `json:"bundle,omitempty"`
+	DefaultValues  []ProjectCustomFieldValueRef `json:"defaultValues,omitempty"`
+	Type           string                       `json:"$type,omitempty"`
 }
 
 // CustomField represents a custom field in YouTrack.
@@ -78,11 +79,12 @@ type CustomFieldUpsertRequest struct {
 
 // CustomFieldDefaultsUpsertModel contains writable default settings.
 type CustomFieldDefaultsUpsertModel struct {
-	CanBeEmpty     *bool      `json:"canBeEmpty,omitempty"`
-	EmptyFieldText *string    `json:"emptyFieldText,omitempty"`
-	IsPublic       *bool      `json:"isPublic,omitempty"`
-	Bundle         *BundleRef `json:"bundle,omitempty"`
-	Type           string     `json:"$type,omitempty"`
+	CanBeEmpty     *bool                        `json:"canBeEmpty,omitempty"`
+	EmptyFieldText *string                      `json:"emptyFieldText,omitempty"`
+	IsPublic       *bool                        `json:"isPublic,omitempty"`
+	Bundle         *BundleRef                   `json:"bundle,omitempty"`
+	DefaultValues  []ProjectCustomFieldValueRef `json:"defaultValues,omitempty"`
+	Type           string                       `json:"$type,omitempty"`
 }
 
 // GetCustomFieldByID returns a specific custom field by ID.

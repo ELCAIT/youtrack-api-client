@@ -1,8 +1,16 @@
-## 1.1.0
+## 1.1.2
 FEATURES:
 
 IMPROVEMENTS:
-- Add default values for project custom field bundles
+- Add default values bundles customfields
+
+BUG FIXES:
+
+## 1.1.1
+FEATURES:
+
+IMPROVEMENTS:
+- Add default values for project customfield bundles
 
 BUG FIXES:
 
