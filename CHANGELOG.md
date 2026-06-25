@@ -1,3 +1,11 @@
+## 1.1.3
+FEATURES:
+
+IMPROVEMENTS:
+- Support for permission graph in role management, allowing to resolve implied and dependent permissions when creating or updating roles.
+
+BUG FIXES:
+
 ## 1.1.2
 FEATURES:
 

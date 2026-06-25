@@ -208,6 +208,68 @@ func TestGetAllPermissions(t *testing.T) {
 	}
 }
 
+// --- GetPermissionGraph ---
+
+func TestGetPermissionGraph(t *testing.T) {
+	t.Parallel()
+
+	graphEntry := PermissionGraphEntry{
+		Id:   testPermIDYT1,
+		Key:  "JetBrains.YouTrack.READ_ISSUE",
+		Name: "Read Issue",
+		ImpliedPermissions: []PermissionGraphEntry{
+			{Id: testPermIDYT2, Key: "jetbrains.jetpass.project-basic-read", Name: "Read Project Basic"},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		wantLen int
+		wantErr bool
+	}{
+		{
+			name: "returns permission graph",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				encodeJSON(t, w, []PermissionGraphEntry{graphEntry})
+			},
+			wantLen: 1,
+		},
+		{
+			name: "returns error on non-2xx",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			wantErr: true,
+		},
+		{
+			name: "returns error on invalid JSON",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(testInvalidJSON))
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, tc.handler)
+			defer server.Close()
+
+			got, err := client.GetPermissionGraph(context.Background())
+			if checkErr(t, err, tc.wantErr) {
+				return
+			}
+
+			if len(got) != tc.wantLen {
+				t.Fatalf("got %d permissions, want %d", len(got), tc.wantLen)
+			}
+		})
+	}
+}
+
 // --- GetYoutrackRoleById ---
 
 func TestGetYoutrackRoleById(t *testing.T) {

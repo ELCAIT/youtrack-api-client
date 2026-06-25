@@ -17,6 +17,7 @@ const (
 	permissionsPath                = "%s/%s/permissions"
 	youtrackPermissionsAPIPath     = "api/permissions"
 	youtrackPermissionsFieldsParam = "fields=id,name,key"
+	permissionGraphFieldsParam     = "fields=id,name,key,impliedPermissions(id,name,key),dependentPermissions(id,name,key)"
 	specificYoutrackRole           = "%s/%s/%s?%s"
 	roleFieldsQueryParam           = "fields=id,key,name,description,permissions(id,key,name)"
 	youtrackRolePermByIDAPIPath    = "%s/api/roles/%s/permissions/%s"
@@ -79,6 +80,27 @@ func (c *Client) getAllYoutrackPermissions(ctx context.Context) ([]Permission, e
 	}
 
 	return perms, nil
+}
+
+// GetPermissionGraph fetches permissions with implied/dependent relations from the YouTrack REST API.
+func (c *Client) GetPermissionGraph(ctx context.Context) ([]PermissionGraphEntry, error) {
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet,
+		fmt.Sprintf(pathWithFieldsFormat, c.HostURL, youtrackPermissionsAPIPath, permissionGraphFieldsParam), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create get permission graph request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get permission graph: %w", err)
+	}
+
+	var graph []PermissionGraphEntry
+	if err = json.Unmarshal(body, &graph); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal permission graph response: %w", err)
+	}
+
+	return graph, nil
 }
 
 // mergePermissionLists deduplicates two permission slices by name; primary takes precedence.

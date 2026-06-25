@@ -31,6 +31,15 @@ type Permission struct {
 	Name string `json:"name,omitempty"`
 }
 
+// PermissionGraphEntry represents a permission and its implied/dependent links.
+type PermissionGraphEntry struct {
+	Id                   string                 `json:"id,omitempty"`
+	Key                  string                 `json:"key,omitempty"`
+	Name                 string                 `json:"name,omitempty"`
+	ImpliedPermissions   []PermissionGraphEntry `json:"impliedPermissions,omitempty"`
+	DependentPermissions []PermissionGraphEntry `json:"dependentPermissions,omitempty"`
+}
+
 // AssignedRoles represents a role assigned to a user or group.
 type AssignedRoles struct {
 	Id     string `json:"id,omitempty"`
