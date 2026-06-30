@@ -2,6 +2,7 @@
 FEATURES:
 
 IMPROVEMENTS:
+- Update dependencies
 
 BUG FIXES:
 - Add hub endpoint for group deletion to support YouTrack 2024.1+ where the legacy endpoint is no longer available. The new endpoint requires a successor group ID when deleting a group, which is now supported in the client.
