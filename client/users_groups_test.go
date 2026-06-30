@@ -213,15 +213,19 @@ func TestDeleteGroup(t *testing.T) {
 		name           string
 		statusCode     int
 		wantDeleteCall bool
+		wantErr        bool
 	}{
 		{
 			name:           "success sends DELETE with successor param",
 			statusCode:     http.StatusOK,
 			wantDeleteCall: true,
+			wantErr:        false,
 		},
 		{
-			name:       "404 is silently ignored",
-			statusCode: http.StatusNotFound,
+			name:           "404 returns error when no endpoint variant accepts delete",
+			statusCode:     http.StatusNotFound,
+			wantDeleteCall: true,
+			wantErr:        true,
 		},
 	}
 
@@ -235,7 +239,10 @@ func TestDeleteGroup(t *testing.T) {
 			defer server.Close()
 
 			err := client.DeleteGroup(context.Background(), testGroupID, testAllUsersGroupID)
-			if err != nil {
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error")
+			}
+			if !tc.wantErr && err != nil {
 				t.Fatalf(fmtUnexpectedError, err)
 			}
 			if tc.wantDeleteCall && !deleteCalled {

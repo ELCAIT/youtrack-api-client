@@ -11,13 +11,15 @@ import (
 )
 
 const (
-	hubUserGroupsAPIPath    = "api/usergroups"
-	hubUserLifecycleFields  = "fields=id,ringId,login,fullName,email,$type"
-	hubAllUsersNoFields     = "%s/%s"
-	hubSpecificUserPath     = "%s/%s/%s?%s"
-	hubGroupUsersPathFormat = "%s/%s/%s/users?%s"
-	hubGroupUserPathFormat  = "%s/%s/%s/users/%s"
-	hubUserGroupPathFormat  = "%s/%s/%s/groups/%s"
+	hubUserGroupsAPIPath     = "api/usergroups"
+	hubRestUserGroupsAPIPath = "hub/api/rest/usergroups"
+	hubRestUsersAPIPath      = "hub/api/rest/users"
+	hubUserLifecycleFields   = "fields=id,ringId,login,fullName,email,$type"
+	hubAllUsersNoFields      = "%s/%s"
+	hubSpecificUserPath      = "%s/%s/%s?%s"
+	hubGroupUsersPathFormat  = "%s/%s/%s/users?%s"
+	hubGroupUserPathFormat   = "%s/%s/%s/users/%s"
+	hubUserGroupPathFormat   = "%s/%s/%s/groups/%s"
 )
 
 func isRetryableMembershipEndpointError(err error) bool {
@@ -149,10 +151,12 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 		{
 			method:   httpMethodPost,
 			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
+			body:     rb,
 		},
 		{
 			method:   httpMethodPost,
 			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
+			body:     rb,
 		},
 		{
 			method:   http.MethodPut,
@@ -161,6 +165,20 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 		{
 			method:   http.MethodPut,
 			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
+		},
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, hubUserLifecycleFields),
+			body:     rb,
+		},
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
+			body:     rb,
+		},
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
 		},
 	}
 
@@ -195,31 +213,22 @@ func (c *Client) RemoveUserFromGroup(ctx context.Context, groupID, userID string
 		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
 		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
 		fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, userID, groupID),
+		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
+		fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, userID, groupID),
 	}
 
-	var lastErr error
-	allRetryable := true
 	for _, endpoint := range attempts {
 		err := deleteAt(endpoint)
 		if err == nil {
 			return nil
 		}
 		if isRetryableMembershipEndpointError(err) || IsNotFoundError(err) {
-			lastErr = err
 			continue
 		}
 		return fmt.Errorf("failed to remove user from group: %w", err)
 	}
 
-	if allRetryable {
-		// Remove is idempotent: if all known endpoint variants returned 404/405,
-		// the membership is effectively absent.
-		return nil
-	}
-
-	if lastErr != nil {
-		return fmt.Errorf("failed to remove user from group: %w", lastErr)
-	}
-
+	// Remove is idempotent: if all known endpoint variants returned 404/405,
+	// the membership is effectively absent.
 	return nil
 }

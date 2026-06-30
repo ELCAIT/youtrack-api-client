@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,9 +15,9 @@ import (
 const (
 	youtrackUsersAPIPath     = "api/users"
 	youtrackGroupsAPIPath    = "api/groups"
-	userFieldsQueryParam     = "fields=id,name,login,$type"
+	userFieldsQueryParam     = "fields=id,ringId,name,login,$type"
 	groupFieldsQueryParam    = "fields=id,name,$type"
-	allUsersGroupFieldsParam = "fields=id,name,allUsersGroup"
+	allUsersGroupFieldsParam = "fields=id,ringId,name,allUsersGroup"
 	nestedGroupFields        = "fields=id,name,description,ownUsers(id,login),subGroups(id,name),requireTwoFactorAuthentication,viewers(id,name,login,$type),updaters(id,name,login,$type),autoJoin,autoJoinDomain,ringId,icon,allUsersGroup,usersCount,users(id,login)"
 	allYoutrackUsers         = pathWithFieldsFormat
 	allYoutrackGroups        = pathWithFieldsFormat
@@ -39,7 +40,7 @@ func withPagination(fields string, top, skip int) string {
 // ListUsers returns users and supports optional pagination via top/skip.
 // Pass 0 for top and skip to use the default server-side pagination.
 func (c *Client) ListUsers(ctx context.Context, top, skip int) ([]Holder, error) {
-	query := withPagination("id,name,login,$type", top, skip)
+	query := withPagination("id,ringId,name,login,$type", top, skip)
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackUsers, c.HostURL, youtrackUsersAPIPath, query), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list users request: %w", err)
@@ -69,7 +70,7 @@ func (c *Client) ListUsers(ctx context.Context, top, skip int) ([]Holder, error)
 // ListGroups returns groups and supports optional pagination via top/skip.
 // Pass 0 for top and skip to use the default server-side pagination.
 func (c *Client) ListGroups(ctx context.Context, top, skip int) ([]Holder, error) {
-	query := withPagination("id,name,$type", top, skip)
+	query := withPagination("id,ringId,name,$type", top, skip)
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackGroups, c.HostURL, youtrackGroupsAPIPath, query), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list groups request: %w", err)
@@ -267,19 +268,41 @@ func (c *Client) GetAllUsersGroup(ctx context.Context) (*NestedGroup, error) {
 // the group that will receive the users of the deleted group; the YouTrack API
 // requires this parameter.
 func (c *Client) DeleteGroup(ctx context.Context, groupID, successorID string) error {
-	url := fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, youtrackGroupsAPIPath, groupID, successorID)
-	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create delete group request: %w", err)
+	attempts := []string{
+		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, hubRestUserGroupsAPIPath, groupID, url.QueryEscape(successorID)),
+		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, hubUserGroupsAPIPath, groupID, url.QueryEscape(successorID)),
+		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, youtrackGroupsAPIPath, groupID, url.QueryEscape(successorID)),
 	}
 
-	_, err = c.doRequest(req)
-	if err != nil {
-		if IsNotFoundError(err) {
+	var lastErr error
+	for _, endpoint := range attempts {
+		req, err := http.NewRequestWithContext(ctx, httpMethodDelete, endpoint, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create delete group request: %w", err)
+		}
+
+		_, err = c.doRequest(req)
+		if err == nil {
 			return nil
 		}
+
+		if IsNotFoundError(err) {
+			lastErr = err
+			continue
+		}
+
+		var httpErr *HTTPError
+		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusMethodNotAllowed {
+			lastErr = err
+			continue
+		}
+
 		return fmt.Errorf("failed to delete group: %w", err)
 	}
 
-	return nil
+	if lastErr != nil {
+		return fmt.Errorf("failed to delete group: %w", lastErr)
+	}
+
+	return fmt.Errorf("failed to delete group: no endpoint attempts were made")
 }
