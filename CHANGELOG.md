@@ -1,3 +1,12 @@
+## 1.1.4
+FEATURES:
+
+IMPROVEMENTS:
+
+BUG FIXES:
+- Add hub endpoint for group deletion to support YouTrack 2024.1+ where the legacy endpoint is no longer available. The new endpoint requires a successor group ID when deleting a group, which is now supported in the client.
+- Harden group management using ringId for group identification to avoid issues with groups that have the same name. The client now uses ringId for group operations when available, falling back to name-based identification only when necessary.
+
 ## 1.1.3
 FEATURES:
 
