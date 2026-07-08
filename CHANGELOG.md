@@ -1,3 +1,15 @@
+## 1.1.5
+FEATURES:
+- Add `BanUser` method to ban a user account via Hub lifecycle semantics.
+
+IMPROVEMENTS:
+- Expand `AddUserToGroup` fallback endpoint chain: canonical Hub usergroup membership endpoints (`POST /api/usergroups/{id}/users`) are now tried first, followed by user-centric endpoints (`PUT /api/users/{id}/groups/{id}`), improving compatibility across YouTrack and Hub versions.
+- Include `banned` field in Hub user lifecycle queries so ban status is reflected when fetching or updating users.
+- Include `description` field when listing groups.
+- Add `Description` field to `Holder` model.
+
+BUG FIXES:
+
 ## 1.1.4
 FEATURES:
 

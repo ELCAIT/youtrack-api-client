@@ -8,6 +8,7 @@ type User struct {
 	FullName string `json:"fullName,omitempty"`
 	Email    string `json:"email,omitempty"`
 	Password string `json:"password,omitempty"`
+	Banned   bool   `json:"banned,omitempty"`
 }
 
 // NestedGroup represents a nested group in YouTrack
