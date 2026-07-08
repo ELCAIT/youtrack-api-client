@@ -55,10 +55,10 @@ type Scope struct {
 }
 
 type Holder struct {
-	Id     string `json:"id,omitempty"`
-	RingID string `json:"ringId,omitempty"`
-	Name   string `json:"name,omitempty"`
+	Id          string `json:"id,omitempty"`
+	RingID      string `json:"ringId,omitempty"`
+	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
-	Login  string `json:"login,omitempty"`
-	Type   string `json:"$type,omitempty"`
+	Login       string `json:"login,omitempty"`
+	Type        string `json:"$type,omitempty"`
 }
