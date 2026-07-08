@@ -378,6 +378,38 @@ func TestUpdateUser(t *testing.T) {
 	}
 }
 
+func TestBanUser(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		if !strings.Contains(string(body), `"banned":true`) {
+			t.Fatalf("expected banned=true in request body, got %s", string(body))
+		}
+
+		encodeJSON(t, w, User{ID: testUserID, Login: testUserLogin, Banned: true})
+	})
+	defer server.Close()
+
+	updated, err := client.BanUser(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if !updated.Banned {
+		t.Fatal("expected banned user response")
+	}
+}
+
 // --- DeleteUser ---
 
 func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bool) http.HandlerFunc {
@@ -466,6 +498,41 @@ func TestAddUserToGroup(t *testing.T) {
 
 	if err := client.AddUserToGroup(context.Background(), testGroupID, testUserID); err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
+	}
+}
+
+func TestAddUserToGroupFallbackOnMethodNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	var calls []string
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+
+		// Simulate staging behavior where /api/groups membership add is not allowed.
+		if strings.HasPrefix(r.URL.Path, "/api/groups/") {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte("Code,405\nError,Method Not Allowed"))
+			return
+		}
+
+		// Accept hub user-group style endpoint as fallback success.
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID+"/groups/"+testGroupID) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = w.Write([]byte("Code,405\nError,Method Not Allowed"))
+	})
+	defer server.Close()
+
+	if err := client.AddUserToGroup(context.Background(), testGroupID, testUserID); err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+
+	if len(calls) < 2 {
+		t.Fatalf("expected multiple fallback calls, got %d", len(calls))
 	}
 }
 

@@ -70,7 +70,7 @@ func (c *Client) ListUsers(ctx context.Context, top, skip int) ([]Holder, error)
 // ListGroups returns groups and supports optional pagination via top/skip.
 // Pass 0 for top and skip to use the default server-side pagination.
 func (c *Client) ListGroups(ctx context.Context, top, skip int) ([]Holder, error) {
-	query := withPagination("id,ringId,name,$type", top, skip)
+	query := withPagination("id,ringId,name,description,$type", top, skip)
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackGroups, c.HostURL, youtrackGroupsAPIPath, query), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list groups request: %w", err)

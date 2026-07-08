@@ -14,10 +14,11 @@ const (
 	hubUserGroupsAPIPath     = "api/usergroups"
 	hubRestUserGroupsAPIPath = "hub/api/rest/usergroups"
 	hubRestUsersAPIPath      = "hub/api/rest/users"
-	hubUserLifecycleFields   = "fields=id,ringId,login,fullName,email,$type"
+	hubUserLifecycleFields   = "fields=id,ringId,login,fullName,email,banned,$type"
 	hubAllUsersNoFields      = "%s/%s"
 	hubSpecificUserPath      = "%s/%s/%s?%s"
 	hubGroupUsersPathFormat  = "%s/%s/%s/users?%s"
+	hubGroupUsersNoFields    = "%s/%s/%s/users"
 	hubGroupUserPathFormat   = "%s/%s/%s/users/%s"
 	hubUserGroupPathFormat   = "%s/%s/%s/groups/%s"
 )
@@ -99,6 +100,16 @@ func (c *Client) UpdateUser(ctx context.Context, userID string, user User) (*Use
 	return &updated, nil
 }
 
+// BanUser bans a user using Hub-style lifecycle semantics.
+func (c *Client) BanUser(ctx context.Context, userID string) (*User, error) {
+	updated, err := c.UpdateUser(ctx, userID, User{Banned: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to ban user: %w", err)
+	}
+
+	return updated, nil
+}
+
 // DeleteUser deletes a user and passes a successor as required by Hub semantics.
 func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	guest, err := c.GetUserByLogin(ctx, "guest")
@@ -125,10 +136,16 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 
 // AddUserToGroup adds a user to a group using Hub usergroups endpoints.
 func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) error {
-	payload := Holder{Id: userID}
-	rb, err := json.Marshal(payload)
+	userPayload := Holder{Id: userID}
+	userRB, err := json.Marshal(userPayload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal add user to group payload: %w", err)
+	}
+
+	groupPayload := Holder{Id: groupID}
+	groupRB, err := json.Marshal(groupPayload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal add group to user payload: %w", err)
 	}
 
 	type membershipAttempt struct {
@@ -138,47 +155,86 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 	}
 
 	attempts := []membershipAttempt{
+		// Canonical Hub usergroup membership endpoints (preferred).
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUsersNoFields, c.HostURL, hubUserGroupsAPIPath, groupID),
+			body:     userRB,
+		},
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUsersNoFields, c.HostURL, hubRestUserGroupsAPIPath, groupID),
+			body:     userRB,
+		},
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
+		},
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
+		},
+		// Compatibility variants with explicit fields query.
 		{
 			method:   httpMethodPost,
 			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, hubUserLifecycleFields),
-			body:     rb,
-		},
-		{
-			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, hubUserLifecycleFields),
-			body:     rb,
-		},
-		{
-			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
-			body:     rb,
-		},
-		{
-			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
-			body:     rb,
-		},
-		{
-			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
-		},
-		{
-			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
+			body:     userRB,
 		},
 		{
 			method:   httpMethodPost,
 			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, hubUserLifecycleFields),
-			body:     rb,
+			body:     userRB,
+		},
+		// Legacy/compatibility endpoints for older setups.
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, hubUserLifecycleFields),
+			body:     userRB,
+		},
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
+			body:     userRB,
 		},
 		{
 			method:   httpMethodPost,
 			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
-			body:     rb,
+			body:     userRB,
+		},
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
+			body:     userRB,
+		},
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
 		},
 		{
 			method:   http.MethodPut,
 			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
+		},
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
+		},
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, userID, groupID),
+			body:     groupRB,
+		},
+		{
+			method:   httpMethodPost,
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, userID, groupID),
+			body:     groupRB,
+		},
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, userID, groupID),
+		},
+		{
+			method:   http.MethodPut,
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, userID, groupID),
 		},
 	}
 
