@@ -89,7 +89,11 @@ func (c *Client) UpdateOAuth2AuthModule(ctx context.Context, moduleID string, mo
 		return nil, fmt.Errorf("failed to update oauth2 auth module: %w", err)
 	}
 
-	// Hub returns an empty body on a successful update; fetch the updated state.
+	// Hub returns an empty body on a successful update and applies it
+	// asynchronously; wait for it to settle before fetching the updated state,
+	// otherwise the immediate read can still return the pre-update values.
+	waitForAsyncProcessing()
+
 	return c.GetOAuth2AuthModuleByID(ctx, moduleID)
 }
 

@@ -1,3 +1,12 @@
+## 1.1.6
+FEATURES:
+
+IMPROVEMENTS:
+
+BUG FIXES:
+- `UpdateOAuth2AuthModule` now waits for Hub's asynchronous update to settle before re-fetching the module, so the returned state reflects the just-applied change instead of occasionally racing the update and returning stale values.
+- `OAuth2AuthModule`'s optional string fields (`redirectUri`, `iconUrl`, `extensionGrantType`, `scope`, `userInfoUrl`, `idpLogoutUrl`, and the `user*Path`/`user*Url` claim-mapping fields) and optional int fields (`connectionTimeout`, `readTimeout`) no longer use `omitempty` on marshal, so clearing one of them to an empty/zero value on update now actually sends the clear to Hub instead of silently omitting the field and leaving the previous value in place. `syncInterval` keeps `omitempty`: Hub rejects the request outright if it's present but empty.
+
 ## 1.1.5
 FEATURES:
 - Add `BanUser` method to ban a user account via Hub lifecycle semantics.
