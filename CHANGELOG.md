@@ -1,5 +1,6 @@
 ## 1.1.6
 FEATURES:
+- Add `CreateAzureAuthModule`, `GetAzureAuthModuleByID`, `UpdateAzureAuthModule`, and `DeleteAzureAuthModule` for managing Hub Microsoft Entra ID (formerly Azure AD) authentication modules, alongside the existing generic OAuth2 support.
 
 IMPROVEMENTS:
 
