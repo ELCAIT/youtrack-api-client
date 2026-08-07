@@ -1,3 +1,11 @@
+## 1.1.7
+FEATURES:
+- Add `CreateService`, `ListServices`, `GetServiceByID`, `UpdateService`, and `DeleteService` for managing Hub services (external application registrations, e.g. for OAuth-based integrations), covering the HUB-REST-API Services endpoints.
+
+IMPROVEMENTS:
+
+BUG FIXES:
+
 ## 1.1.6
 FEATURES:
 - Add `CreateAzureAuthModule`, `GetAzureAuthModuleByID`, `UpdateAzureAuthModule`, and `DeleteAzureAuthModule` for managing Hub Microsoft Entra ID (formerly Azure AD) authentication modules, alongside the existing generic OAuth2 support.
