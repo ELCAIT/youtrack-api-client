@@ -114,25 +114,7 @@ func TestUpdateAzureAuthModuleClearsTenant(t *testing.T) {
 		switch r.Method {
 		case httpMethodPost:
 			sawPost = true
-
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf(fmtUnexpectedError, err)
-			}
-
-			var payload map[string]any
-			if err := json.Unmarshal(body, &payload); err != nil {
-				t.Fatalf("failed to decode update payload: %v", err)
-			}
-
-			v, ok := payload["tenant"]
-			if !ok {
-				t.Fatal("expected update payload to include cleared field \"tenant\", but the key was omitted")
-			}
-			if v != "" {
-				t.Fatalf("expected update payload field \"tenant\" to be empty, got %q", v)
-			}
-
+			assertClearedTenantInUpdatePayload(t, r)
 			w.WriteHeader(http.StatusOK)
 		case httpMethodGet:
 			sawGet = true
@@ -157,6 +139,31 @@ func TestUpdateAzureAuthModuleClearsTenant(t *testing.T) {
 	}
 	if got.Tenant != "" {
 		t.Fatalf("expected cleared tenant in refreshed module, got %q", got.Tenant)
+	}
+}
+
+// assertClearedTenantInUpdatePayload verifies the update request body
+// explicitly sends "tenant": "" rather than omitting the key, since Hub
+// leaves a previously-configured tenant untouched if the key is absent.
+func assertClearedTenantInUpdatePayload(t *testing.T, r *http.Request) {
+	t.Helper()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("failed to decode update payload: %v", err)
+	}
+
+	v, ok := payload["tenant"]
+	if !ok {
+		t.Fatal("expected update payload to include cleared field \"tenant\", but the key was omitted")
+	}
+	if v != "" {
+		t.Fatalf("expected update payload field \"tenant\" to be empty, got %q", v)
 	}
 }
 
