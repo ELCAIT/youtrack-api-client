@@ -1,6 +1,7 @@
 ## 1.1.7
 FEATURES:
 - Add `CreateService`, `ListServices`, `GetServiceByID`, `UpdateService`, and `DeleteService` for managing Hub services (external application registrations, e.g. for OAuth-based integrations), covering the HUB-REST-API Services endpoints.
+- `Service` now exposes the five OAuth 2.0 grant flow flags Hub tracks per service: `ClientCredentialsFlowEnabled`, `AuthCodeFlowEnabled`, `PKCERequired`, `ImplicitFlowEnabled`, and `ResourceOwnerFlowEnabled`.
 
 IMPROVEMENTS:
 

@@ -271,6 +271,60 @@ func assertClearedFieldsInServiceUpdatePayload(t *testing.T, r *http.Request) {
 	}
 }
 
+// TestCreateServiceSendsOAuthFlowFlags guards that the five OAuth flow bools
+// are always sent as explicit true/false in the create payload - they are
+// plain (non-pointer) bools, so Go's zero value already marshals as an
+// explicit "false" rather than being omitted, unlike the omitempty string
+// fields on Service.
+func TestCreateServiceSendsOAuthFlowFlags(t *testing.T) {
+	t.Parallel()
+
+	var payload map[string]any
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf(fmtUnexpectedError, err)
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("failed to decode create payload: %v", err)
+		}
+		encodeJSON(t, w, Service{ID: testServiceID, Name: testServiceName})
+	}
+
+	client, server := newTestClient(t, handler)
+	defer server.Close()
+
+	_, err := client.CreateService(context.Background(), Service{
+		Name:                         testServiceName,
+		ClientCredentialsFlowEnabled: true,
+		AuthCodeFlowEnabled:          true,
+		PKCERequired:                 false,
+		ImplicitFlowEnabled:          false,
+		ResourceOwnerFlowEnabled:     false,
+	})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+
+	wantFlags := map[string]bool{
+		"clientCredentialsFlowEnabled": true,
+		"authCodeFlowEnabled":          true,
+		"pkceRequired":                 false,
+		"implicitFlowEnabled":          false,
+		"resourceOwnerFlowEnabled":     false,
+	}
+	for field, want := range wantFlags {
+		got, ok := payload[field]
+		if !ok {
+			t.Fatalf("expected create payload to include field %q, but the key was omitted", field)
+		}
+		if got != want {
+			t.Fatalf("expected create payload field %q to be %v, got %v", field, want, got)
+		}
+	}
+}
+
 func TestDeleteService(t *testing.T) {
 	t.Parallel()
 

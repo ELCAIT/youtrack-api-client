@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	servicesBasePath        = "%s/%s/services"
-	serviceByIDPath         = "%s/%s/services/%s"
-	serviceFields           = "id,type,name,key,homeUrl,applicationName,description,vendor,version,trusted,consentRequired,secret,redirectUris,baseUrls"
+	servicesBasePath = "%s/%s/services"
+	serviceByIDPath  = "%s/%s/services/%s"
+	serviceFields    = "id,type,name,key,homeUrl,applicationName,description,vendor,version,trusted,consentRequired,secret,redirectUris,baseUrls," +
+		"clientCredentialsFlowEnabled,authCodeFlowEnabled,pkceRequired,implicitFlowEnabled,resourceOwnerFlowEnabled"
 	serviceFieldsQueryParam = "fields=" + serviceFields
 )
 

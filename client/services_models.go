@@ -20,21 +20,36 @@ package youtrack
 // applicationName, version, and releaseDate" — and Key defaults to Name when
 // omitted at creation, so there is never a need to send an intentional empty
 // value for these fields.
+//
+// Trusted, ConsentRequired, and the five OAuth flow flags
+// (ClientCredentialsFlowEnabled, AuthCodeFlowEnabled, PKCERequired,
+// ImplicitFlowEnabled, ResourceOwnerFlowEnabled) are plain bools, so Go's zero
+// value already marshals as an explicit `false` — there is no "omitted" state
+// to preserve for them. Hub defaults all of them but PKCERequired to `true`
+// for a service created without specifying them; PKCERequired defaults to
+// `false`. Hub does not enforce any cross-flag constraint (e.g. PKCERequired
+// can be `true` while AuthCodeFlowEnabled is `false`), so this client doesn't
+// validate that relationship either.
 type Service struct {
-	ID              string   `json:"id,omitempty"`
-	Type            string   `json:"type,omitempty"`
-	Name            string   `json:"name,omitempty"`
-	Key             string   `json:"key,omitempty"`
-	HomeURL         string   `json:"homeUrl"`
-	ApplicationName string   `json:"applicationName,omitempty"`
-	Description     string   `json:"description"`
-	Vendor          string   `json:"vendor,omitempty"`
-	Version         string   `json:"version,omitempty"`
-	RedirectURIs    []string `json:"redirectUris"`
-	BaseURLs        []string `json:"baseUrls"`
-	Trusted         bool     `json:"trusted"`
-	ConsentRequired bool     `json:"consentRequired"`
-	Secret          string   `json:"secret,omitempty"` //nolint:gosec // G117: field name reflects the Hub service credential term, not a hardcoded secret
+	ID                           string   `json:"id,omitempty"`
+	Type                         string   `json:"type,omitempty"`
+	Name                         string   `json:"name,omitempty"`
+	Key                          string   `json:"key,omitempty"`
+	HomeURL                      string   `json:"homeUrl"`
+	ApplicationName              string   `json:"applicationName,omitempty"`
+	Description                  string   `json:"description"`
+	Vendor                       string   `json:"vendor,omitempty"`
+	Version                      string   `json:"version,omitempty"`
+	RedirectURIs                 []string `json:"redirectUris"`
+	BaseURLs                     []string `json:"baseUrls"`
+	Trusted                      bool     `json:"trusted"`
+	ConsentRequired              bool     `json:"consentRequired"`
+	ClientCredentialsFlowEnabled bool     `json:"clientCredentialsFlowEnabled"`
+	AuthCodeFlowEnabled          bool     `json:"authCodeFlowEnabled"`
+	PKCERequired                 bool     `json:"pkceRequired"`
+	ImplicitFlowEnabled          bool     `json:"implicitFlowEnabled"`
+	ResourceOwnerFlowEnabled     bool     `json:"resourceOwnerFlowEnabled"`
+	Secret                       string   `json:"secret,omitempty"` //nolint:gosec // G117: field name reflects the Hub service credential term, not a hardcoded secret
 }
 
 // ServicesResponse wraps the paginated Hub services list response.
