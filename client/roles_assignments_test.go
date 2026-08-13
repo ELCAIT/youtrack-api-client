@@ -10,7 +10,6 @@ import (
 const (
 	testAssignedRoleID = "31-70"
 	testGlobalScopeID  = "544-0"
-	testProjectScopeID = "545-0"
 	testProjectID      = "0-2"
 	testHolderID       = "4-3"
 )
@@ -64,7 +63,7 @@ func TestGetAllAssignedRoles(t *testing.T) {
 			client, server := newTestClient(t, tc.handler)
 			defer server.Close()
 
-			got, err := client.GetAllAssignedRoles(context.Background())
+			got, err := client.GetAllAssignedRoles(context.Background(), 0, 0)
 			if checkErr(t, err, tc.wantErr) {
 				return
 			}
@@ -81,10 +80,15 @@ func TestGetAssignedRolesByHolder(t *testing.T) {
 	t.Parallel()
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		got := r.URL.Query().Get("query")
-		want := "holder:" + testHolderID
-		if got != want {
+		q := r.URL.Query()
+		if got, want := q.Get("query"), "holder:"+testHolderID; got != want {
 			t.Errorf("query param = %q, want %q", got, want)
+		}
+		if got, want := q.Get("$top"), "5"; got != want {
+			t.Errorf("$top param = %q, want %q", got, want)
+		}
+		if got, want := q.Get("$skip"), "10"; got != want {
+			t.Errorf("$skip param = %q, want %q", got, want)
 		}
 		encodeJSON(t, w, []AssignedRole{{Id: testAssignedRoleID}})
 	}
@@ -92,7 +96,7 @@ func TestGetAssignedRolesByHolder(t *testing.T) {
 	client, server := newTestClient(t, handler)
 	defer server.Close()
 
-	got, err := client.GetAssignedRolesByHolder(context.Background(), testHolderID)
+	got, err := client.GetAssignedRolesByHolder(context.Background(), testHolderID, 5, 10)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}

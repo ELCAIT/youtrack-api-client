@@ -12,11 +12,12 @@ import (
 const (
 	assignedRolesAPIPath    = "api/assignedRoles"
 	youtrackRolesAPIPath    = "api/roles"
-	assignedRoleFieldsParam = "fields=id,role(id,name,description),scope(id,$type,project(id,name,shortName)),holder(id,name,login,$type),$type"
+	assignedRoleFields      = "id,role(id,name,description),scope(id,$type,project(id,name,shortName)),holder(id,name,login,$type),$type"
+	assignedRoleFieldsParam = "fields=" + assignedRoleFields
 	pathWithFieldsFormat    = "%s/%s?%s"
 	allAssignedRoles        = pathWithFieldsFormat
 	specificAssignedRole    = "%s/%s/%s?%s"
-	assignedRolesByQuery    = "%s/%s?%s&query=%s"
+	holderQueryFormat       = "holder:%s"
 
 	assignedRoleType = "AssignedRole"
 )
@@ -42,16 +43,20 @@ func (c *Client) listAssignedRoles(ctx context.Context, endpoint string) ([]Assi
 	return roles, nil
 }
 
-// GetAllAssignedRoles - Returns list of assigned roles.
-func (c *Client) GetAllAssignedRoles(ctx context.Context) ([]AssignedRole, error) {
-	endpoint := fmt.Sprintf(allAssignedRoles, c.HostURL, assignedRolesAPIPath, assignedRoleFieldsParam)
+// GetAllAssignedRoles - Returns list of assigned roles. Pass 0 for top and skip
+// to use the default server-side pagination (42 entries per YouTrack's own limit).
+func (c *Client) GetAllAssignedRoles(ctx context.Context, top, skip int) ([]AssignedRole, error) {
+	query := withPagination(assignedRoleFields, top, skip)
+	endpoint := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, assignedRolesAPIPath, query)
 	return c.listAssignedRoles(ctx, endpoint)
 }
 
 // GetAssignedRolesByHolder - Returns the role assignments held by a specific user
-// or group, identified by holder ID.
-func (c *Client) GetAssignedRolesByHolder(ctx context.Context, holderID string) ([]AssignedRole, error) {
-	endpoint := fmt.Sprintf(assignedRolesByQuery, c.HostURL, assignedRolesAPIPath, assignedRoleFieldsParam, url.QueryEscape("holder:"+holderID))
+// or group, identified by holder ID. Pass 0 for top and skip to use the default
+// server-side pagination.
+func (c *Client) GetAssignedRolesByHolder(ctx context.Context, holderID string, top, skip int) ([]AssignedRole, error) {
+	query := withPagination(assignedRoleFields, top, skip) + "&query=" + url.QueryEscape(fmt.Sprintf(holderQueryFormat, holderID))
+	endpoint := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, assignedRolesAPIPath, query)
 	return c.listAssignedRoles(ctx, endpoint)
 }
 

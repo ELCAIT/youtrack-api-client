@@ -1,3 +1,19 @@
+## 1.2.0
+FEATURES:
+- `Scope` now carries a `Project` reference, so `AssignedRole` (`CreateAssignedRole`, `UpdateAssignedRole`, `GetAllAssignedRoles`, `GetAssignedRoleById`) can assign or read roles scoped to a specific project (`ProjectScope`) in addition to global scope, letting the Tofu/Terraform provider and other tools manage permissions at project or global level.
+- Add `GetAssignedRolesByHolder(ctx, holderID, top, skip)` to look up all role assignments for a specific user or group, using the `holder` query filter on `api/assignedRoles`.
+- `GetAllAssignedRoles` now takes `top, skip int` pagination parameters, matching the convention used by `ListUsers`/`ListServices`; pass 0 for both to keep the previous default-page behavior.
+
+IMPROVEMENTS:
+- `CreateAssignedRole` and `UpdateAssignedRole` now set `$type` to `AssignedRole` on the request payload automatically.
+
+BUG FIXES:
+- `GetAllAssignedRoles` previously unmarshaled the `api/assignedRoles` response as a `{"assignedRoles": [...]}` wrapper, but the YouTrack REST API returns a bare JSON array for this endpoint; it always returned an empty list. Fixed to parse the bare array.
+
+BREAKING CHANGES:
+- Renamed the exported `AssignedRoles` type to `AssignedRole` (it represents a single role assignment) and removed `AssignedRolesResponse`, which was unused now that the list endpoint is parsed as a bare array. Consumers referencing either name need to update to `AssignedRole`.
+- `GetAllAssignedRoles` gained required `top, skip int` parameters (see FEATURES above).
+
 ## 1.1.7
 FEATURES:
 - Add `CreateService`, `ListServices`, `GetServiceByID`, `UpdateService`, and `DeleteService` for managing Hub services (external application registrations, e.g. for OAuth-based integrations), covering the HUB-REST-API Services endpoints.
