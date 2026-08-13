@@ -4,24 +4,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 )
 
 const (
-	youtrackUsersAPIPath     = "api/users"
-	youtrackGroupsAPIPath    = "api/groups"
-	userFieldsQueryParam     = "fields=id,ringId,name,login,$type"
-	groupFieldsQueryParam    = "fields=id,name,$type"
-	allUsersGroupFieldsParam = "fields=id,ringId,name,allUsersGroup"
-	nestedGroupFields        = "fields=id,name,description,ownUsers(id,login),subGroups(id,name),requireTwoFactorAuthentication,viewers(id,name,login,$type),updaters(id,name,login,$type),autoJoin,autoJoinDomain,ringId,icon,allUsersGroup,usersCount,users(id,login)"
-	allYoutrackUsers         = pathWithFieldsFormat
-	allYoutrackGroups        = pathWithFieldsFormat
-	specificYoutrackGroup    = "%s/%s/%s?%s"
+	youtrackUsersAPIPath  = "api/users"
+	youtrackGroupsAPIPath = "api/groups"
+	allUsersGroupFields   = "id,ringId,name,allUsersGroup"
+	nestedGroupFields     = "fields=id,name,description,ownUsers(id,login),subGroups(id,name),requireTwoFactorAuthentication,viewers(id,name,login,$type),updaters(id,name,login,$type),autoJoin,autoJoinDomain,ringId,icon,allUsersGroup,usersCount,users(id,login)"
+	allYoutrackUsers      = pathWithFieldsFormat
+	allYoutrackGroups     = pathWithFieldsFormat
+	specificYoutrackGroup = "%s/%s/%s?%s"
+
+	// userGroupLookupPageSize is the page size used when paging through users/groups
+	// to find an exact match by login or name.
+	userGroupLookupPageSize = 100
 )
 
 func withPagination(fields string, top, skip int) string {
@@ -97,74 +97,40 @@ func (c *Client) ListGroups(ctx context.Context, top, skip int) ([]Holder, error
 	return response.Groups, nil
 }
 
-// GetUserByLogin - Returns a user by login (username).
+// GetUserByLogin - Returns a user by login (username), matched case-insensitively,
+// paging through all users if the login isn't found on the first page.
 func (c *Client) GetUserByLogin(ctx context.Context, login string) (*Holder, error) {
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackUsers, c.HostURL, youtrackUsersAPIPath, userFieldsQueryParam), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create get user request: %w", err)
+	fetchPage := func(ctx context.Context, skip int) ([]Holder, error) {
+		return c.ListUsers(ctx, userGroupLookupPageSize, skip)
 	}
 
-	body, err := c.doRequest(req)
+	match, err := lookupByNamePaginated(ctx, userGroupLookupPageSize, login, fetchPage, func(h Holder) string { return h.Login })
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users: %w", err)
 	}
-
-	var users []Holder
-	err = json.Unmarshal(body, &users)
-	if err != nil {
-		var response struct {
-			Users []Holder `json:"users"`
-		}
-		err = json.Unmarshal(body, &response)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal user response: %w", err)
-		}
-		users = response.Users
+	if match == nil {
+		return nil, fmt.Errorf("user with login '%s' not found", login)
 	}
 
-	// Filter for exact match on login
-	for _, user := range users {
-		if user.Login == login {
-			return &user, nil
-		}
-	}
-
-	return nil, fmt.Errorf("user with login '%s' not found", login)
+	return match, nil
 }
 
-// GetUserGroupByName - Returns a user group by name.
+// GetUserGroupByName - Returns a user group by name (case-insensitive), paging
+// through all groups if the name isn't found on the first page.
 func (c *Client) GetUserGroupByName(ctx context.Context, name string) (*Holder, error) {
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackGroups, c.HostURL, youtrackGroupsAPIPath, groupFieldsQueryParam), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create get user group request: %w", err)
+	fetchPage := func(ctx context.Context, skip int) ([]Holder, error) {
+		return c.ListGroups(ctx, userGroupLookupPageSize, skip)
 	}
 
-	body, err := c.doRequest(req)
+	match, err := lookupByNamePaginated(ctx, userGroupLookupPageSize, name, fetchPage, func(h Holder) string { return h.Name })
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user groups: %w", err)
 	}
-
-	var groups []Holder
-	err = json.Unmarshal(body, &groups)
-	if err != nil {
-		var response struct {
-			Groups []Holder `json:"usergroups"`
-		}
-		err = json.Unmarshal(body, &response)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal user group response: %w", err)
-		}
-		groups = response.Groups
+	if match == nil {
+		return nil, fmt.Errorf("user group with name '%s' not found", name)
 	}
 
-	// Filter for exact match on name (case-insensitive)
-	for _, group := range groups {
-		if strings.EqualFold(group.Name, name) {
-			return &group, nil
-		}
-	}
-
-	return nil, fmt.Errorf("user group with name '%s' not found", name)
+	return match, nil
 }
 
 // CreateGroup creates a new YouTrack group.
@@ -238,26 +204,34 @@ func (c *Client) UpdateGroup(ctx context.Context, groupID string, group NestedGr
 }
 
 // GetAllUsersGroup returns the built-in "All Users" group which is used as a
-// required successor when deleting any other group.
+// required successor when deleting any other group. Pages through all groups
+// if necessary, since the all-users group isn't guaranteed to be on the first page.
 func (c *Client) GetAllUsersGroup(ctx context.Context) (*NestedGroup, error) {
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackGroups, c.HostURL, youtrackGroupsAPIPath, allUsersGroupFieldsParam), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create get all-users group request: %w", err)
-	}
+	for skip := 0; ; skip += userGroupLookupPageSize {
+		query := withPagination(allUsersGroupFields, userGroupLookupPageSize, skip)
+		req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(allYoutrackGroups, c.HostURL, youtrackGroupsAPIPath, query), nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create get all-users group request: %w", err)
+		}
 
-	body, err := c.doRequest(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get groups: %w", err)
-	}
+		body, err := c.doRequest(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get groups: %w", err)
+		}
 
-	var groups []NestedGroup
-	if err := json.Unmarshal(body, &groups); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal groups: %w", err)
-	}
+		var groups []NestedGroup
+		if err := json.Unmarshal(body, &groups); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal groups: %w", err)
+		}
 
-	for i := range groups {
-		if groups[i].AllUsersGroup {
-			return &groups[i], nil
+		for i := range groups {
+			if groups[i].AllUsersGroup {
+				return &groups[i], nil
+			}
+		}
+
+		if len(groups) < userGroupLookupPageSize {
+			break
 		}
 	}
 
@@ -286,13 +260,7 @@ func (c *Client) DeleteGroup(ctx context.Context, groupID, successorID string) e
 			return nil
 		}
 
-		if IsNotFoundError(err) {
-			lastErr = err
-			continue
-		}
-
-		var httpErr *HTTPError
-		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusMethodNotAllowed {
+		if isRetryableMembershipEndpointError(err) {
 			lastErr = err
 			continue
 		}

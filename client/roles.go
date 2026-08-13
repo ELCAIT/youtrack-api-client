@@ -200,21 +200,18 @@ func (c *Client) UpdateYoutrackRole(ctx context.Context, role Role) (*Role, erro
 		return nil, fmt.Errorf("failed to update role: %w", err)
 	}
 
+	// Wait for the API to process the change (async processing)
+	waitForAsyncProcessing()
+
 	return c.GetYoutrackRoleById(ctx, role.Id)
 }
 
 // DeleteYoutrackRole deletes a role via the YouTrack API.
 func (c *Client) DeleteYoutrackRole(ctx context.Context, roleId string) error {
-	url := fmt.Sprintf("%s/%s/%s", c.HostURL, youtrackRolesAPIPath, roleId)
-	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create delete role request: %w", err)
-	}
-
-	_, err = c.doRequest(req)
-	if err != nil && !IsNotFoundError(err) {
-		return fmt.Errorf("failed to delete role: %w", err)
-	}
-
-	return nil
+	return deleteByID(ctx, c, roleId, deleteConfig{
+		HostURL:   c.HostURL,
+		APIPath:   youtrackRolesAPIPath,
+		ErrCreate: "failed to create delete role request: %w",
+		ErrFetch:  "failed to delete role: %w",
+	})
 }

@@ -33,15 +33,20 @@ func (c *Client) GetAppearanceSettings(ctx context.Context) (AppearanceSettings,
 	return response, nil
 }
 
-// UpdateAppearanceSettings - Updates existing appearance settings.
+// UpdateAppearanceSettings - Updates existing appearance settings. Only the
+// fields set on appearanceSettings (non-empty ID) are sent, so leaving one
+// field zero-valued doesn't clear its previously configured value.
 func (c *Client) UpdateAppearanceSettings(ctx context.Context, appearanceSettings AppearanceSettings) (AppearanceSettings, error) {
-	requestBody := map[string]interface{}{
-		"dateFieldFormat": map[string]interface{}{
+	requestBody := map[string]interface{}{}
+	if appearanceSettings.DateFormat.ID != "" {
+		requestBody["dateFieldFormat"] = map[string]interface{}{
 			"id": appearanceSettings.DateFormat.ID,
-		},
-		"timeZone": map[string]interface{}{
+		}
+	}
+	if appearanceSettings.TimeZone.ID != "" {
+		requestBody["timeZone"] = map[string]interface{}{
 			"id": appearanceSettings.TimeZone.ID,
-		},
+		}
 	}
 
 	rb, err := json.Marshal(requestBody)

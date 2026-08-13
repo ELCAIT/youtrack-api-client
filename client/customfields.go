@@ -204,19 +204,10 @@ func (c *Client) UpdateCustomField(ctx context.Context, id string, customField C
 
 // DeleteCustomField deletes a custom field by ID.
 func (c *Client) DeleteCustomField(ctx context.Context, id string) error {
-	req, err := http.NewRequestWithContext(ctx, httpMethodDelete,
-		fmt.Sprintf("%s/%s/%s", c.HostURL, customFieldsAPIPath, id), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create delete custom field request: %w", err)
-	}
-
-	_, err = c.doRequest(req)
-	if err != nil {
-		if IsNotFoundError(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to delete custom field: %w", err)
-	}
-
-	return nil
+	return deleteByID(ctx, c, id, deleteConfig{
+		HostURL:   c.HostURL,
+		APIPath:   customFieldsAPIPath,
+		ErrCreate: "failed to create delete custom field request: %w",
+		ErrFetch:  "failed to delete custom field: %w",
+	})
 }

@@ -256,15 +256,6 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 
 // RemoveUserFromGroup removes a user from a group using Hub usergroups endpoints.
 func (c *Client) RemoveUserFromGroup(ctx context.Context, groupID, userID string) error {
-	deleteAt := func(endpoint string) error {
-		req, reqErr := http.NewRequestWithContext(ctx, httpMethodDelete, endpoint, nil)
-		if reqErr != nil {
-			return reqErr
-		}
-		_, reqErr = c.doRequest(req)
-		return reqErr
-	}
-
 	attempts := []string{
 		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
 		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
@@ -274,7 +265,7 @@ func (c *Client) RemoveUserFromGroup(ctx context.Context, groupID, userID string
 	}
 
 	for _, endpoint := range attempts {
-		err := deleteAt(endpoint)
+		err := c.sendMembershipRequest(ctx, httpMethodDelete, endpoint, nil)
 		if err == nil {
 			return nil
 		}
