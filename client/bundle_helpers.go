@@ -59,6 +59,11 @@ type deleteConfig struct {
 	ErrFetch  string
 }
 
+// lookupByNamePaginated pages through all results looking for an exact match on
+// targetName. An exact match on any page wins immediately. A case-insensitive
+// match is only returned as a fallback once every page has been scanned and no
+// exact match was found anywhere, so an exact match on a later page is never
+// shadowed by a case-insensitive match on an earlier one.
 func lookupByNamePaginated[T any](
 	ctx context.Context,
 	pageSize int,
@@ -66,14 +71,20 @@ func lookupByNamePaginated[T any](
 	fetchPage func(context.Context, int) ([]T, error),
 	nameOf func(T) string,
 ) (*T, error) {
+	var fuzzyMatch *T
+
 	for skip := 0; ; skip += pageSize {
 		items, err := fetchPage(ctx, skip)
 		if err != nil {
 			return nil, err
 		}
 
-		if match := findByName(items, targetName, nameOf); match != nil {
-			return match, nil
+		exact, fuzzy := findByName(items, targetName, nameOf)
+		if exact != nil {
+			return exact, nil
+		}
+		if fuzzyMatch == nil {
+			fuzzyMatch = fuzzy
 		}
 
 		if len(items) < pageSize {
@@ -81,24 +92,24 @@ func lookupByNamePaginated[T any](
 		}
 	}
 
-	return nil, nil
+	return fuzzyMatch, nil
 }
 
-func findByName[T any](items []T, targetName string, nameOf func(T) string) *T {
-	var caseInsensitiveMatch *T
-
+// findByName scans a single page for an exact match on targetName, and separately
+// tracks the first case-insensitive match as a fallback candidate.
+func findByName[T any](items []T, targetName string, nameOf func(T) string) (exact *T, fuzzy *T) {
 	for i := range items {
 		name := nameOf(items[i])
 		if name == targetName {
-			return &items[i]
+			return &items[i], nil
 		}
 
-		if caseInsensitiveMatch == nil && strings.EqualFold(name, targetName) {
-			caseInsensitiveMatch = &items[i]
+		if fuzzy == nil && strings.EqualFold(name, targetName) {
+			fuzzy = &items[i]
 		}
 	}
 
-	return caseInsensitiveMatch
+	return nil, fuzzy
 }
 
 func fetchAndDecodePage[T any](

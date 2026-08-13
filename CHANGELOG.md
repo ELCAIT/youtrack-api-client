@@ -6,9 +6,17 @@ FEATURES:
 
 IMPROVEMENTS:
 - `CreateAssignedRole` and `UpdateAssignedRole` now set `$type` to `AssignedRole` on the request payload automatically.
+- `DeleteGroup`, `RemoveUserFromGroup`, `DeleteYoutrackRole`, `DeleteCustomField`, and `DeleteIssueLinkType` now reuse the existing shared helpers (`isRetryableMembershipEndpointError`, `sendMembershipRequest`, `deleteByID`) instead of each duplicating the same request/retry/not-found logic inline.
 
 BUG FIXES:
 - `GetAllAssignedRoles` previously unmarshaled the `api/assignedRoles` response as a `{"assignedRoles": [...]}` wrapper, but the YouTrack REST API returns a bare JSON array for this endpoint; it always returned an empty list. Fixed to parse the bare array.
+- `GetUserByLogin`, `GetUserGroupByName`, and `GetAllUsersGroup` previously only checked the server's first page of results, so lookups could fail on instances with more users/groups than fit on one page — including `DeleteUser`'s internal lookup of the `guest` successor. All three now page through results until a match is found.
+- `GetUserByLogin` now matches logins case-insensitively, consistent with `GetUserGroupByName`.
+- `GetEnumBundleByName`/`GetStateBundleByName` could return a case-insensitive match found on an earlier page even when an exact match existed on a later page; the underlying paginated lookup now always prefers an exact match across all pages before falling back to a case-insensitive one.
+- `UpdateService` and `UpdateYoutrackRole` now wait for the asynchronous update to settle before re-fetching, matching the fix already applied to `UpdateOAuth2AuthModule` in 1.1.6; previously they could return stale pre-update values.
+- `DeleteProject` and `RemoveProjectCustomField` now treat a 404 response as success, making them idempotent like the other `Delete`/`Remove` methods in the client.
+- `assignedRoleFields` now requests `role.key`, `role.permissions`, `holder.ringId`, and `holder.description`, which were previously omitted from the fields query and so always came back as zero values.
+- `UpdateAppearanceSettings` now only sends the `dateFieldFormat`/`timeZone` field that is actually set, so updating one no longer resets the other to empty.
 
 BREAKING CHANGES:
 - Renamed the exported `AssignedRoles` type to `AssignedRole` (it represents a single role assignment) and removed `AssignedRolesResponse`, which was unused now that the list endpoint is parsed as a bare array. Consumers referencing either name need to update to `AssignedRole`.

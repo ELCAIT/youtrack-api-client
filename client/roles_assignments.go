@@ -12,7 +12,7 @@ import (
 const (
 	assignedRolesAPIPath    = "api/assignedRoles"
 	youtrackRolesAPIPath    = "api/roles"
-	assignedRoleFields      = "id,role(id,name,description),scope(id,$type,project(id,name,shortName)),holder(id,name,login,$type),$type"
+	assignedRoleFields      = "id,role(id,key,name,description,permissions(id,key,name)),scope(id,$type,project(id,name,shortName)),holder(id,ringId,name,login,description,$type),$type"
 	assignedRoleFieldsParam = "fields=" + assignedRoleFields
 	pathWithFieldsFormat    = "%s/%s?%s"
 	allAssignedRoles        = pathWithFieldsFormat

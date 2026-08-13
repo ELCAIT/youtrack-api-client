@@ -212,7 +212,7 @@ func (c *Client) DeleteProject(ctx context.Context, id string) error {
 	}
 
 	_, err = c.doRequest(req)
-	if err != nil {
+	if err != nil && !IsNotFoundError(err) {
 		return fmt.Errorf("failed to delete project: %w", err)
 	}
 
@@ -338,7 +338,7 @@ func (c *Client) RemoveProjectCustomField(ctx context.Context, projectID, fieldI
 	}
 
 	_, err = c.doRequest(req)
-	if err != nil {
+	if err != nil && !IsNotFoundError(err) {
 		return fmt.Errorf("failed to remove project custom field: %w", err)
 	}
 

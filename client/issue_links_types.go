@@ -150,19 +150,10 @@ func (c *Client) UpdateIssueLinkType(ctx context.Context, id string, issueLinkTy
 
 // DeleteIssueLinkType deletes a specific issue link type by ID.
 func (c *Client) DeleteIssueLinkType(ctx context.Context, id string) error {
-	req, err := http.NewRequestWithContext(ctx, httpMethodDelete,
-		fmt.Sprintf("%s/%s/%s", c.HostURL, issueLinkTypesAPIPath, id), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create delete issue link type request: %w", err)
-	}
-
-	_, err = c.doRequest(req)
-	if err != nil {
-		if IsNotFoundError(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to delete issue link type: %w", err)
-	}
-
-	return nil
+	return deleteByID(ctx, c, id, deleteConfig{
+		HostURL:   c.HostURL,
+		APIPath:   issueLinkTypesAPIPath,
+		ErrCreate: "failed to create delete issue link type request: %w",
+		ErrFetch:  "failed to delete issue link type: %w",
+	})
 }

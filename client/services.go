@@ -105,6 +105,9 @@ func (c *Client) UpdateService(ctx context.Context, serviceID string, service Se
 		return nil, fmt.Errorf("failed to update service: %w", err)
 	}
 
+	// Wait for the API to process the change (async processing)
+	waitForAsyncProcessing()
+
 	return c.GetServiceByID(ctx, serviceID)
 }
 
