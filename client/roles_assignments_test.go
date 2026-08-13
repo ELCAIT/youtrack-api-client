@@ -158,6 +158,60 @@ func TestGetAssignedRoleById(t *testing.T) {
 
 // --- CreateAssignedRole ---
 
+// checkAssignedRoleType asserts that Create/UpdateAssignedRole forced $type on the payload.
+func checkAssignedRoleType(t *testing.T, body AssignedRole) {
+	t.Helper()
+
+	if body.Type != assignedRoleType {
+		t.Errorf("$type = %q, want %q", body.Type, assignedRoleType)
+	}
+}
+
+// checkGlobalScope asserts the payload carries a bare GlobalScope with no project.
+func checkGlobalScope(t *testing.T, scope Scope) {
+	t.Helper()
+
+	if scope.Type != "GlobalScope" {
+		t.Errorf("scope.$type = %q, want GlobalScope", scope.Type)
+	}
+	if scope.Project != nil {
+		t.Errorf("scope.project = %+v, want nil", scope.Project)
+	}
+}
+
+// checkProjectScope asserts the payload carries a ProjectScope for the given project.
+func checkProjectScope(t *testing.T, scope Scope, projectID string) {
+	t.Helper()
+
+	if scope.Type != "ProjectScope" {
+		t.Errorf("scope.$type = %q, want ProjectScope", scope.Type)
+	}
+	if scope.Project == nil || scope.Project.ID != projectID {
+		t.Errorf("scope.project = %+v, want project id %q", scope.Project, projectID)
+	}
+}
+
+// newCreateAssignedRoleHandler returns a handler that validates the create request
+// via checkBody and echoes the created assigned role back.
+func newCreateAssignedRoleHandler(t *testing.T, checkBody func(t *testing.T, body AssignedRole)) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf(errUnexpectedMethod, r.Method)
+		}
+
+		var body AssignedRole
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		checkBody(t, body)
+
+		body.Id = testAssignedRoleID
+		encodeJSON(t, w, body)
+	}
+}
+
 func TestCreateAssignedRole(t *testing.T) {
 	t.Parallel()
 
@@ -174,15 +228,8 @@ func TestCreateAssignedRole(t *testing.T) {
 				Holder: Holder{Id: testHolderID, Type: "User"},
 			},
 			checkBody: func(t *testing.T, body AssignedRole) {
-				if body.Type != assignedRoleType {
-					t.Errorf("$type = %q, want %q", body.Type, assignedRoleType)
-				}
-				if body.Scope.Type != "GlobalScope" {
-					t.Errorf("scope.$type = %q, want GlobalScope", body.Scope.Type)
-				}
-				if body.Scope.Project != nil {
-					t.Errorf("scope.project = %+v, want nil", body.Scope.Project)
-				}
+				checkAssignedRoleType(t, body)
+				checkGlobalScope(t, body.Scope)
 			},
 		},
 		{
@@ -193,12 +240,8 @@ func TestCreateAssignedRole(t *testing.T) {
 				Holder: Holder{Id: testHolderID, Type: "User"},
 			},
 			checkBody: func(t *testing.T, body AssignedRole) {
-				if body.Scope.Type != "ProjectScope" {
-					t.Errorf("scope.$type = %q, want ProjectScope", body.Scope.Type)
-				}
-				if body.Scope.Project == nil || body.Scope.Project.ID != testProjectID {
-					t.Errorf("scope.project = %+v, want project id %q", body.Scope.Project, testProjectID)
-				}
+				checkAssignedRoleType(t, body)
+				checkProjectScope(t, body.Scope, testProjectID)
 			},
 		},
 	}
@@ -207,22 +250,7 @@ func TestCreateAssignedRole(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost {
-					t.Errorf(errUnexpectedMethod, r.Method)
-				}
-
-				var body AssignedRole
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Fatalf("failed to decode request body: %v", err)
-				}
-				tc.checkBody(t, body)
-
-				body.Id = testAssignedRoleID
-				encodeJSON(t, w, body)
-			}
-
-			client, server := newTestClient(t, handler)
+			client, server := newTestClient(t, newCreateAssignedRoleHandler(t, tc.checkBody))
 			defer server.Close()
 
 			got, err := client.CreateAssignedRole(context.Background(), tc.input)
