@@ -5,11 +5,6 @@ type RolesResponse struct {
 	Roles []Role `json:"roles"`
 }
 
-// AssignedRolesResponse wraps a list of assigned roles.
-type AssignedRolesResponse struct {
-	AssignedRoles []AssignedRoles `json:"assignedRoles"`
-}
-
 // PermissionsResponse wraps a list of permissions.
 type PermissionsResponse struct {
 	Permissions []Permission `json:"permissions"`
@@ -40,8 +35,8 @@ type PermissionGraphEntry struct {
 	DependentPermissions []PermissionGraphEntry `json:"dependentPermissions,omitempty"`
 }
 
-// AssignedRoles represents a role assigned to a user or group.
-type AssignedRoles struct {
+// AssignedRole represents a role assigned to a user or group within a specific access scope.
+type AssignedRole struct {
 	Id     string `json:"id,omitempty"`
 	Role   Role   `json:"role,omitempty"`
 	Scope  Scope  `json:"scope,omitempty"`
@@ -49,11 +44,16 @@ type AssignedRoles struct {
 	Type   string `json:"$type,omitempty"`
 }
 
+// Scope represents the AccessScope a role is assigned in. Type ($type) discriminates
+// between "GlobalScope", "OrganizationScope", and "ProjectScope". Project is only
+// set (and only meaningful) when Type is "ProjectScope".
 type Scope struct {
-	Id   string `json:"id,omitempty"`
-	Type string `json:"$type,omitempty"`
+	Id      string   `json:"id,omitempty"`
+	Project *Project `json:"project,omitempty"`
+	Type    string   `json:"$type,omitempty"`
 }
 
+// Holder represents the user or group a role is assigned to.
 type Holder struct {
 	Id          string `json:"id,omitempty"`
 	RingID      string `json:"ringId,omitempty"`
