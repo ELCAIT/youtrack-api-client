@@ -1,6 +1,6 @@
 module github.com/elcait/youtrack-api-client
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/bitfield/gotestdox v0.2.2 // indirect
