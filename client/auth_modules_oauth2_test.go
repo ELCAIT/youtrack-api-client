@@ -102,6 +102,44 @@ func TestGetOAuth2AuthModuleByID(t *testing.T) {
 	}
 }
 
+// clearedOAuth2Fields are the optional payload keys that must be sent as
+// explicit empty values when cleared, rather than omitted.
+var clearedOAuth2Fields = []string{"extensionGrantType", "userPictureIdPath"}
+
+// readRequestBody reads a request body in full, failing the test on error.
+func readRequestBody(t *testing.T, r *http.Request) []byte {
+	t.Helper()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+
+	return body
+}
+
+// assertFieldsClearedExplicitly asserts that the update payload carries each
+// named field as an explicit empty value, rather than dropping the key — which
+// is what would silently leave the previous value in place on the Hub side.
+func assertFieldsClearedExplicitly(t *testing.T, body []byte, fields []string) {
+	t.Helper()
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("failed to decode update payload: %v", err)
+	}
+
+	for _, field := range fields {
+		value, ok := payload[field]
+		if !ok {
+			t.Fatalf("expected update payload to include cleared field %q, but the key was omitted", field)
+		}
+		if value != "" {
+			t.Fatalf("expected update payload field %q to be empty, got %q", field, value)
+		}
+	}
+}
+
 // TestUpdateOAuth2AuthModuleClearsOptionalFields guards the fix for
 // https://github.com/ELCAIT/terraform-provider-youtrack/issues/39: clearing an
 // optional string field (e.g. extension_grant_type, user_picture_id_path) must
@@ -116,27 +154,7 @@ func TestUpdateOAuth2AuthModuleClearsOptionalFields(t *testing.T) {
 		switch r.Method {
 		case httpMethodPost:
 			sawPost = true
-
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf(fmtUnexpectedError, err)
-			}
-
-			var payload map[string]any
-			if err := json.Unmarshal(body, &payload); err != nil {
-				t.Fatalf("failed to decode update payload: %v", err)
-			}
-
-			for _, field := range []string{"extensionGrantType", "userPictureIdPath"} {
-				v, ok := payload[field]
-				if !ok {
-					t.Fatalf("expected update payload to include cleared field %q, but the key was omitted", field)
-				}
-				if v != "" {
-					t.Fatalf("expected update payload field %q to be empty, got %q", field, v)
-				}
-			}
-
+			assertFieldsClearedExplicitly(t, readRequestBody(t, r), clearedOAuth2Fields)
 			w.WriteHeader(http.StatusOK)
 		case httpMethodGet:
 			sawGet = true

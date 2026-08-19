@@ -100,12 +100,183 @@ func integrationStamp() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000)
 }
 
+// activationStep is one named stage of the activation lifecycle.
+type activationStep struct {
+	name string
+	run  func(*testing.T)
+}
+
+// appActivationSteps drives the ordered per-project activation lifecycle
+// against one app and one project. The steps share state — the usage ID the
+// first enable creates — so they run in sequence rather than in parallel, and
+// each one builds on the state its predecessor left behind.
+type appActivationSteps struct {
+	client  *Client
+	ctx     context.Context
+	app     *App
+	project *Project
+	usageID string
+}
+
+// all returns the lifecycle stages in the order they must run.
+func (s *appActivationSteps) all() []activationStep {
+	return []activationStep{
+		{"app is readable by id and by name", s.checkReadable},
+		{"baseline: the app starts detached", s.checkBaselineDetached},
+		{"enable attaches and enables the app", s.checkEnableAttaches},
+		{"enable is idempotent", s.checkEnableIdempotent},
+		{"usage shows up in the app usage list", s.checkUsageListed},
+		{"disable turns the app off but keeps it attached", s.checkDisableKeepsAttached},
+		{"disable is idempotent", s.checkDisableIdempotent},
+		{"re-enable turns a disabled usage back on", s.checkReEnable},
+		{"detach removes the app from the project", s.checkDetach},
+		{"detach is idempotent", s.checkDetachIdempotent},
+		{"disabling a detached app is a no-op", s.checkDisableDetachedIsNoop},
+	}
+}
+
+// usage reads the app's current usage for the project, failing the test on a
+// read error so callers can assert on the returned value directly.
+func (s *appActivationSteps) usage(t *testing.T) *AppUsage {
+	t.Helper()
+
+	usage, err := s.client.GetAppUsageForProject(s.ctx, s.app.ID, s.project.ID)
+	if err != nil {
+		t.Fatalf("failed to read app usage: %v", err)
+	}
+
+	return usage
+}
+
+// assertSameUsage checks that an operation reused the usage the first enable
+// created, rather than replacing it or creating a second one.
+func (s *appActivationSteps) assertSameUsage(t *testing.T, usage *AppUsage, action string) {
+	t.Helper()
+
+	if usage.ID != s.usageID {
+		t.Fatalf("%s replaced the usage: got %s, want %s", action, usage.ID, s.usageID)
+	}
+}
+
+func (s *appActivationSteps) checkReadable(t *testing.T) {
+	byID, err := s.client.GetAppByID(s.ctx, s.app.ID)
+	if err != nil {
+		t.Fatalf("failed to get app by id: %v", err)
+	}
+	if byID.ID != s.app.ID || byID.Name != s.app.Name {
+		t.Fatalf("unexpected app by id: got %+v, want id %s name %s", byID, s.app.ID, s.app.Name)
+	}
+
+	byName, err := s.client.GetAppByName(s.ctx, s.app.Name)
+	if err != nil {
+		t.Fatalf("failed to get app by name: %v", err)
+	}
+	if byName.ID != s.app.ID {
+		t.Fatalf(fmtUnexpectedID, byName.ID, s.app.ID)
+	}
+}
+
+func (s *appActivationSteps) checkBaselineDetached(t *testing.T) {
+	// A newly created project is not a blank slate: YouTrack auto-attaches a
+	// set of default workflow apps to every new project, so whether the app
+	// under test starts attached depends on which app it is. Detach first to
+	// get a deterministic starting point — which doubles as a check that
+	// DetachAppFromProject works on an auto-attached app.
+	if err := s.client.DetachAppFromProject(s.ctx, s.app.ID, s.project.ID); err != nil {
+		t.Fatalf("failed to detach app to establish a baseline: %v", err)
+	}
+
+	assertNoUsage(t, s.usage(t))
+}
+
+func (s *appActivationSteps) checkEnableAttaches(t *testing.T) {
+	usage, err := s.client.EnableAppForProject(s.ctx, s.app.ID, s.project.ID)
+	if err != nil {
+		t.Fatalf("failed to enable app for project: %v", err)
+	}
+	assertUsageEnabled(t, usage, s.project.ID, true)
+	s.usageID = usage.ID
+
+	assertUsageEnabled(t, s.usage(t), s.project.ID, true)
+}
+
+func (s *appActivationSteps) checkEnableIdempotent(t *testing.T) {
+	usage, err := s.client.EnableAppForProject(s.ctx, s.app.ID, s.project.ID)
+	if err != nil {
+		t.Fatalf("failed to re-enable app for project: %v", err)
+	}
+	assertUsageEnabled(t, usage, s.project.ID, true)
+	s.assertSameUsage(t, usage, "enable")
+}
+
+func (s *appActivationSteps) checkUsageListed(t *testing.T) {
+	usages, err := s.client.ListAppUsages(s.ctx, s.app.ID)
+	if err != nil {
+		t.Fatalf("failed to list app usages: %v", err)
+	}
+	if findAppUsageForProject(usages, s.project.ID) == nil {
+		t.Fatalf("project %s missing from the app usage list (%d entries)", s.project.ID, len(usages))
+	}
+}
+
+func (s *appActivationSteps) checkDisableKeepsAttached(t *testing.T) {
+	usage, err := s.client.DisableAppForProject(s.ctx, s.app.ID, s.project.ID)
+	if err != nil {
+		t.Fatalf("failed to disable app for project: %v", err)
+	}
+	assertUsageEnabled(t, usage, s.project.ID, false)
+
+	reread := s.usage(t)
+	if reread == nil {
+		t.Fatal("disable detached the app instead of only disabling it")
+	}
+	assertUsageEnabled(t, reread, s.project.ID, false)
+}
+
+func (s *appActivationSteps) checkDisableIdempotent(t *testing.T) {
+	usage, err := s.client.DisableAppForProject(s.ctx, s.app.ID, s.project.ID)
+	if err != nil {
+		t.Fatalf("failed to re-disable app for project: %v", err)
+	}
+	assertUsageEnabled(t, usage, s.project.ID, false)
+	s.assertSameUsage(t, usage, "disable")
+}
+
+func (s *appActivationSteps) checkReEnable(t *testing.T) {
+	usage, err := s.client.EnableAppForProject(s.ctx, s.app.ID, s.project.ID)
+	if err != nil {
+		t.Fatalf("failed to re-enable a disabled app: %v", err)
+	}
+	assertUsageEnabled(t, usage, s.project.ID, true)
+	s.assertSameUsage(t, usage, "re-enable")
+}
+
+func (s *appActivationSteps) checkDetach(t *testing.T) {
+	if err := s.client.DetachAppFromProject(s.ctx, s.app.ID, s.project.ID); err != nil {
+		t.Fatalf("failed to detach app from project: %v", err)
+	}
+
+	assertNoUsage(t, s.usage(t))
+}
+
+func (s *appActivationSteps) checkDetachIdempotent(t *testing.T) {
+	if err := s.client.DetachAppFromProject(s.ctx, s.app.ID, s.project.ID); err != nil {
+		t.Fatalf("detaching an already-detached app returned an error: %v", err)
+	}
+}
+
+func (s *appActivationSteps) checkDisableDetachedIsNoop(t *testing.T) {
+	usage, err := s.client.DisableAppForProject(s.ctx, s.app.ID, s.project.ID)
+	if err != nil {
+		t.Fatalf("disabling a detached app returned an error: %v", err)
+	}
+
+	assertNoUsage(t, usage)
+}
+
 // TestIntegrationYouTrackAppProjectActivation walks the full per-project
 // activation lifecycle against a live instance: attach, enable, disable,
 // re-enable, and detach, checking idempotency at every step.
-//
-// The subtests share the same app and project and must run in order, so they
-// are deliberately not parallel.
 func TestIntegrationYouTrackAppProjectActivation(t *testing.T) {
 	client, ctx := requireAppsIntegrationConfig(t)
 
@@ -120,156 +291,13 @@ func TestIntegrationYouTrackAppProjectActivation(t *testing.T) {
 		}
 	})
 
-	t.Run("app is readable by id and by name", func(t *testing.T) {
-		byID, err := client.GetAppByID(ctx, app.ID)
-		if err != nil {
-			t.Fatalf("failed to get app by id: %v", err)
+	steps := &appActivationSteps{client: client, ctx: ctx, app: app, project: project}
+	for _, step := range steps.all() {
+		if !t.Run(step.name, step.run) {
+			// Every later step builds on the state this one should have left
+			// behind, so running them after a failure only adds noise.
+			break
 		}
-		if byID.ID != app.ID || byID.Name != app.Name {
-			t.Fatalf("unexpected app by id: got %+v, want id %s name %s", byID, app.ID, app.Name)
-		}
-
-		byName, err := client.GetAppByName(ctx, app.Name)
-		if err != nil {
-			t.Fatalf("failed to get app by name: %v", err)
-		}
-		if byName.ID != app.ID {
-			t.Fatalf(fmtUnexpectedID, byName.ID, app.ID)
-		}
-	})
-
-	t.Run("fresh project has no usage", func(t *testing.T) {
-		usage, err := client.GetAppUsageForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to read app usage: %v", err)
-		}
-		if usage != nil {
-			t.Fatalf("expected no usage on a fresh project, got %+v", usage)
-		}
-	})
-
-	var usageID string
-
-	t.Run("enable attaches and enables the app", func(t *testing.T) {
-		usage, err := client.EnableAppForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to enable app for project: %v", err)
-		}
-		assertUsageEnabled(t, usage, project.ID, true)
-		usageID = usage.ID
-
-		reread, err := client.GetAppUsageForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to re-read app usage: %v", err)
-		}
-		assertUsageEnabled(t, reread, project.ID, true)
-	})
-
-	t.Run("enable is idempotent", func(t *testing.T) {
-		usage, err := client.EnableAppForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to re-enable app for project: %v", err)
-		}
-		assertUsageEnabled(t, usage, project.ID, true)
-		if usage.ID != usageID {
-			t.Fatalf("enable created a second usage: got %s, want %s", usage.ID, usageID)
-		}
-	})
-
-	t.Run("usage shows up in the app usage list", func(t *testing.T) {
-		usages, err := client.ListAppUsages(ctx, app.ID)
-		if err != nil {
-			t.Fatalf("failed to list app usages: %v", err)
-		}
-		if findAppUsageForProject(usages, project.ID) == nil {
-			t.Fatalf("project %s missing from the app usage list (%d entries)", project.ID, len(usages))
-		}
-	})
-
-	t.Run("disable turns the app off but keeps it attached", func(t *testing.T) {
-		usage, err := client.DisableAppForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to disable app for project: %v", err)
-		}
-		assertUsageEnabled(t, usage, project.ID, false)
-
-		reread, err := client.GetAppUsageForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to re-read app usage: %v", err)
-		}
-		if reread == nil {
-			t.Fatal("disable detached the app instead of only disabling it")
-		}
-		assertUsageEnabled(t, reread, project.ID, false)
-	})
-
-	t.Run("disable is idempotent", func(t *testing.T) {
-		usage, err := client.DisableAppForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to re-disable app for project: %v", err)
-		}
-		assertUsageEnabled(t, usage, project.ID, false)
-		if usage.ID != usageID {
-			t.Fatalf("disable replaced the usage: got %s, want %s", usage.ID, usageID)
-		}
-	})
-
-	t.Run("re-enable turns a disabled usage back on", func(t *testing.T) {
-		usage, err := client.EnableAppForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to re-enable a disabled app: %v", err)
-		}
-		assertUsageEnabled(t, usage, project.ID, true)
-		if usage.ID != usageID {
-			t.Fatalf("re-enable replaced the usage: got %s, want %s", usage.ID, usageID)
-		}
-	})
-
-	t.Run("detach removes the app from the project", func(t *testing.T) {
-		if err := client.DetachAppFromProject(ctx, app.ID, project.ID); err != nil {
-			t.Fatalf("failed to detach app from project: %v", err)
-		}
-
-		usage, err := client.GetAppUsageForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("failed to read app usage after detach: %v", err)
-		}
-		if usage != nil {
-			t.Fatalf("expected no usage after detach, got %+v", usage)
-		}
-	})
-
-	t.Run("detach is idempotent", func(t *testing.T) {
-		if err := client.DetachAppFromProject(ctx, app.ID, project.ID); err != nil {
-			t.Fatalf("detaching an already-detached app returned an error: %v", err)
-		}
-	})
-
-	t.Run("disabling a detached app is a no-op", func(t *testing.T) {
-		usage, err := client.DisableAppForProject(ctx, app.ID, project.ID)
-		if err != nil {
-			t.Fatalf("disabling a detached app returned an error: %v", err)
-		}
-		if usage != nil {
-			t.Fatalf("expected nil usage for a detached app, got %+v", usage)
-		}
-	})
-}
-
-func assertUsageEnabled(t *testing.T, usage *AppUsage, projectID string, wantEnabled bool) {
-	t.Helper()
-
-	if usage == nil {
-		t.Fatal("expected an app usage, got nil")
-	}
-	if usage.ID == "" {
-		t.Fatal("app usage has an empty id")
-	}
-	if usage.Project == nil || usage.Project.ID != projectID {
-		t.Fatalf("app usage points at the wrong project: %+v", usage.Project)
-	}
-	if usage.Enabled != wantEnabled {
-		t.Fatalf("unexpected enabled state: got %t, want %t", usage.Enabled, wantEnabled)
 	}
 }
 
