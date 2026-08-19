@@ -13,7 +13,8 @@ import (
 
 const (
 	projectsAPIPath    = "api/admin/projects"
-	projectFieldsParam = "fields=id,name,shortName,description,leader(id,login,name),archived,template,fromEmail,replyToEmail,$type"
+	projectFields      = "id,name,shortName,description,leader(id,login,name),archived,template,fromEmail,replyToEmail,$type"
+	projectFieldsParam = "fields=" + projectFields
 
 	projectCustomFieldsSubPath = "customFields"
 	projectCustomFieldFields   = "fields=id,field(id,name),bundle(id,name,$type),defaultValues(id,name,$type),canBeEmpty,emptyFieldText,isPublic,$type"
@@ -154,6 +155,30 @@ func (c *Client) CreateProject(ctx context.Context, payload ProjectCreatePayload
 	}
 
 	return &created, nil
+}
+
+// ListProjects returns projects and supports optional pagination via top/skip.
+// Pass 0 for top and skip to use the default server-side pagination.
+func (c *Client) ListProjects(ctx context.Context, top, skip int) ([]Project, error) {
+	query := withPagination(projectFields, top, skip)
+	url := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, projectsAPIPath, query)
+
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list projects request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list projects: %w", err)
+	}
+
+	var projects []Project
+	if err := json.Unmarshal(body, &projects); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal projects response: %w", err)
+	}
+
+	return projects, nil
 }
 
 // GetProject reads a specific project by its entity ID.

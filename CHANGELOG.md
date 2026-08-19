@@ -1,3 +1,25 @@
+## 1.3.0
+FEATURES:
+- Add app management support, so an app can be enabled or disabled per project, or enabled for every project at once (issue #29):
+  - `ListApps(ctx, top, skip)`, `GetAppByID(ctx, appID)`, and `GetAppByName(ctx, name)` to discover installed apps. `Name` is the package-style identifier (for example `@jetbrains/youtrack-demo-client`) and is what `GetAppByName` matches on; `Title` is the display name shown in the UI.
+  - `ListAppUsages(ctx, appID)` and `GetAppUsageForProject(ctx, appID, projectID)` to read which projects an app is attached to and whether it is enabled in each of them. `GetAppUsageForProject` returns `nil` (with a `nil` error) when the app is not attached to the project.
+  - `EnableAppForProject(ctx, appID, projectID)` and `DisableAppForProject(ctx, appID, projectID)` as idempotent, high-level toggles: enabling attaches the app first when needed, disabling leaves it attached.
+  - `EnableAppForAllProjects(ctx, appID)` to enable an app in every project on the instance. There is no single API call for this, so projects are enumerated and handled one at a time; on the first failure the usages enabled so far are returned alongside the error.
+  - `AttachAppToProject`, `SetAppUsageEnabled`, `DetachAppFromProject`, and `DeleteAppUsage` as the lower-level building blocks. `DetachAppFromProject` and `DeleteAppUsage` treat an already-absent usage as success, like the other `Delete`/`Remove` methods in the client.
+- Add `ListProjects(ctx, top, skip)` to page through the projects on an instance, matching the pagination convention used by `ListUsers`/`ListServices`. It backs `EnableAppForAllProjects` and fills the gap left by the existing single-project `GetProject`.
+- Add an opt-in acceptance suite for the apps endpoints, so regressions in this undocumented API surface as test failures rather than at runtime:
+  - `TestIntegrationYouTrackAppProjectActivation` walks the full lifecycle (read by id/name, attach, enable, re-enable, disable, re-disable, re-enable, detach, re-detach) against a throwaway project it creates and deletes, asserting idempotency at every step.
+  - `TestIntegrationYouTrackAppAllProjectsActivation` covers `EnableAppForAllProjects`. It captures the pre-existing usages, restores them afterwards, and sits behind its own switch because it touches every project on the instance.
+  - New environment variables: `YOUTRACK_RUN_APPS_INTEGRATION_TESTS=1` (required for the suite), `YOUTRACK_RUN_APPS_ALL_PROJECTS_TEST=1` (all-projects test), `YOUTRACK_TEST_APP_NAME` (pick the app to exercise; defaults to the first app reported), and `YOUTRACK_TEST_PROJECT_LEADER` (leader for the throwaway project; defaults to `admin`).
+
+IMPROVEMENTS:
+- The YouTrack apps endpoints are **not part of the officially documented REST API**. JetBrains support confirmed they work and are what the YouTrack UI itself uses, but also that they are undocumented and not guaranteed to stay backward compatible across YouTrack versions. This is called out in the package documentation of `client/apps.go` and in the README; treat these functions as best-effort and verify them against your YouTrack version.
+- The whole apps surface was verified against a live YouTrack 2026.2 (build 18194) instance rather than written from the endpoint sketch alone. Two behaviours found there are documented in `client/apps.go` because the client depends on them: unknown names in a `fields` query are silently ignored rather than rejected, and attaching an app to a project it is already attached to is idempotent server-side (it returns the existing usage instead of creating a second one).
+- `PUT` on the app `usages` collection is deliberately not implemented: it replaces the entire list of projects an app is attached to, so it can silently detach the app from projects the caller never asked to touch. Attach, toggle, and detach act on one project at a time instead.
+- `App` models the fields the entity actually exposes — `ID`, `Name`, `Title`, `Description`, `Version`, and `Vendor` (an `AppVendor` with `Name`/`URL`/`Email`). The `enabled`, `type`, and `author` fields quoted in some support answers do not exist on the App entity: because unknown fields are silently dropped, requesting them yields no error and no value, so modelling them would have meant an `App.Enabled` that reads `false` for every app forever. Whether an app is on or off is a per-project property of its `AppUsage`, not of the `App`.
+
+BUG FIXES:
+
 ## 1.2.0
 FEATURES:
 - `Scope` now carries a `Project` reference, so `AssignedRole` (`CreateAssignedRole`, `UpdateAssignedRole`, `GetAllAssignedRoles`, `GetAssignedRoleById`) can assign or read roles scoped to a specific project (`ProjectScope`) in addition to global scope, letting the Tofu/Terraform provider and other tools manage permissions at project or global level.
