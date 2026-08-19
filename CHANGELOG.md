@@ -1,3 +1,21 @@
+## 1.3.0
+FEATURES:
+- Add app management support, so an app can be enabled or disabled per project, or enabled for every project at once (issue #29):
+  - `ListApps(ctx, top, skip)`, `GetAppByID(ctx, appID)`, and `GetAppByName(ctx, name)` to discover installed apps and their instance-wide `Enabled` state.
+  - `ListAppUsages(ctx, appID)` and `GetAppUsageForProject(ctx, appID, projectID)` to read which projects an app is attached to and whether it is enabled in each of them. `GetAppUsageForProject` returns `nil` (with a `nil` error) when the app is not attached to the project.
+  - `EnableAppForProject(ctx, appID, projectID)` and `DisableAppForProject(ctx, appID, projectID)` as idempotent, high-level toggles: enabling attaches the app first when needed, disabling leaves it attached.
+  - `EnableAppForAllProjects(ctx, appID)` to enable an app in every project on the instance. There is no single API call for this, so projects are enumerated and handled one at a time; on the first failure the usages enabled so far are returned alongside the error.
+  - `AttachAppToProject`, `SetAppUsageEnabled`, `DetachAppFromProject`, and `DeleteAppUsage` as the lower-level building blocks. `DetachAppFromProject` and `DeleteAppUsage` treat an already-absent usage as success, like the other `Delete`/`Remove` methods in the client.
+- Add `ListProjects(ctx, top, skip)` to page through the projects on an instance, matching the pagination convention used by `ListUsers`/`ListServices`. It backs `EnableAppForAllProjects` and fills the gap left by the existing single-project `GetProject`.
+
+IMPROVEMENTS:
+- The YouTrack apps endpoints are **not part of the officially documented REST API**. JetBrains support confirmed they work and are what the YouTrack UI itself uses, but also that they are undocumented and not guaranteed to stay backward compatible across YouTrack versions. This is called out in the package documentation of `client/apps.go` and in the README; treat these functions as best-effort and verify them against your YouTrack version.
+- `PUT` on the app `usages` collection is deliberately not implemented: it replaces the entire list of projects an app is attached to, so it can silently detach the app from projects the caller never asked to touch. Attach, toggle, and detach act on one project at a time instead.
+- `App.Author` is an `AppAuthor` (a named string) that unmarshals from either a plain JSON string or an object exposing `name`/`login`, so a response-shape change in this undocumented API cannot break every apps call.
+- The instance-wide `App.Enabled` flag is exposed read-only, because no write endpoint for it has been confirmed; per-project enablement goes through app usages.
+
+BUG FIXES:
+
 ## 1.2.0
 FEATURES:
 - `Scope` now carries a `Project` reference, so `AssignedRole` (`CreateAssignedRole`, `UpdateAssignedRole`, `GetAllAssignedRoles`, `GetAssignedRoleById`) can assign or read roles scoped to a specific project (`ProjectScope`) in addition to global scope, letting the Tofu/Terraform provider and other tools manage permissions at project or global level.

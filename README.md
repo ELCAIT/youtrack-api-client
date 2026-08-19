@@ -47,6 +47,44 @@ func main() {
 }
 ```
 
+## Apps (undocumented API)
+
+Apps can be enabled or disabled per project, or enabled for every project at once:
+
+```go
+app, err := client.GetAppByName(ctx, "My App")
+if err != nil {
+	log.Fatalf("get app: %v", err)
+}
+
+// Attach the app to a project and enable it there (idempotent).
+if _, err := client.EnableAppForProject(ctx, app.ID, projectID); err != nil {
+	log.Fatalf("enable app: %v", err)
+}
+
+// Disable it again, leaving it attached to the project.
+if _, err := client.DisableAppForProject(ctx, app.ID, projectID); err != nil {
+	log.Fatalf("disable app: %v", err)
+}
+
+// Or enable it everywhere.
+if _, err := client.EnableAppForAllProjects(ctx, app.ID); err != nil {
+	log.Fatalf("enable app everywhere: %v", err)
+}
+```
+
+> **Warning**
+> The YouTrack endpoints behind these functions (`api/admin/apps` and its
+> `usages` sub-resource) are **not part of the officially documented YouTrack
+> REST API**. JetBrains support confirmed they work and that they are what the
+> YouTrack UI itself uses, but also that they are undocumented and not
+> guaranteed to stay backward compatible across YouTrack versions. Treat these
+> functions as best-effort and verify them against your YouTrack version.
+
+These calls require the *Update Project* permission on the target project. For
+background on how apps are scoped globally versus per project, see the
+[JetBrains documentation](https://www.jetbrains.com/help/youtrack/devportal/apps-global-project-level.html).
+
 ## Integration Tests
 
 Integration tests are opt-in and require a reachable YouTrack instance.
