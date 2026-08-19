@@ -26,15 +26,27 @@ import (
 // detach are done one project at a time instead.
 //
 // All app usage calls require the Update Project permission on the target project.
+//
+// Verified against YouTrack 2026.2 (build 18194). Two behaviours of this API are
+// worth knowing, because this client depends on both:
+//   - Unknown names in a `fields` query are silently ignored rather than
+//     rejected, so a field that does not exist comes back absent instead of
+//     erroring. The `enabled`, `type`, and `author` fields quoted in some
+//     support answers do not exist on the App entity and are therefore not
+//     modelled here; whether an app is on or off is a per-project property of
+//     its AppUsage, not of the App itself.
+//   - Attaching an app to a project it is already attached to is idempotent
+//     server-side: it returns the existing usage rather than creating a second
+//     one or failing.
 
 const (
 	appsAPIPath      = "api/admin/apps"
 	appUsagesSubPath = "usages"
 
-	appFields      = "id,name,enabled,type,version,author"
+	appFields      = "id,name,title,description,version,vendor(name,url,email)"
 	appFieldsParam = "fields=" + appFields
 
-	appUsageFields      = "id,enabled,project(id,name,shortName)"
+	appUsageFields      = "id,enabled,project(id,name,shortName),$type"
 	appUsageFieldsParam = "fields=" + appUsageFields
 
 	appUsagesListFmt  = "%s/%s/%s/%s?%s"

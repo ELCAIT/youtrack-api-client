@@ -48,7 +48,7 @@ func TestListApps(t *testing.T) {
 					t.Errorf("unexpected $top: got %s, want 10", got)
 				}
 				encodeJSON(t, w, []App{
-					{ID: testAppID, Name: testAppName, Enabled: true},
+					{ID: testAppID, Name: testAppName, Title: "Test"},
 					{ID: "145-93", Name: "Other App"},
 				})
 			},
@@ -97,7 +97,13 @@ func TestGetAppByID(t *testing.T) {
 		if r.URL.Path != testAppPath {
 			t.Errorf(fmtUnexpectedPath, r.URL.Path)
 		}
-		encodeJSON(t, w, App{ID: testAppID, Name: testAppName, Enabled: true, AppType: "APP", Version: "1.0.0"})
+		encodeJSON(t, w, App{
+			ID:      testAppID,
+			Name:    testAppName,
+			Title:   "Test",
+			Version: "1.0.0",
+			Vendor:  &AppVendor{Name: "JetBrains s.r.o.", URL: "https://jetbrains.com"},
+		})
 	})
 	defer server.Close()
 
@@ -108,8 +114,8 @@ func TestGetAppByID(t *testing.T) {
 	if got.ID != testAppID {
 		t.Fatalf(fmtUnexpectedID, got.ID, testAppID)
 	}
-	if !got.Enabled {
-		t.Fatal("expected app to be enabled")
+	if got.Vendor == nil || got.Vendor.Name != "JetBrains s.r.o." {
+		t.Fatalf("unexpected vendor: %+v", got.Vendor)
 	}
 }
 
@@ -575,50 +581,6 @@ func TestEnableAppForAllProjects(t *testing.T) {
 			t.Fatalf("expected 1 usage before the failure, got %d", len(got))
 		}
 	})
-}
-
-func TestAppAuthorUnmarshalJSON(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		input   string
-		want    AppAuthor
-		wantErr bool
-	}{
-		{name: "plain string", input: `"JetBrains"`, want: "JetBrains"},
-		{name: "object with name", input: `{"name":"JetBrains","url":"https://jetbrains.com"}`, want: "JetBrains"},
-		{name: "object with login only", input: `{"login":"jb"}`, want: "jb"},
-		{name: "null", input: `null`, want: ""},
-		{name: "unsupported shape", input: `[1,2]`, wantErr: true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			var got AppAuthor
-			err := json.Unmarshal([]byte(tc.input), &got)
-			if checkErr(t, err, tc.wantErr) {
-				return
-			}
-			if got != tc.want {
-				t.Fatalf("unexpected author: got %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestAppAuthorMarshalJSON(t *testing.T) {
-	t.Parallel()
-
-	got, err := json.Marshal(App{ID: testAppID, Author: "JetBrains"})
-	if checkErr(t, err, false) {
-		return
-	}
-	if !strings.Contains(string(got), `"author":"JetBrains"`) {
-		t.Fatalf("unexpected marshaled app: %s", got)
-	}
 }
 
 func TestListProjects(t *testing.T) {
