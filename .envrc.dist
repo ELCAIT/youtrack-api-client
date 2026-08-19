@@ -2,5 +2,11 @@
 curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.12.2
 
 export YOUTRACK_RUN_INTEGRATION_TESTS=1
+export YOUTRACK_RUN_HUB_INTEGRATION_TESTS=1
 export YOUTRACK_BASE_URL="http://localhost:8080"
 export YOUTRACK_TOKEN="..."
+
+export YOUTRACK_RUN_APPS_INTEGRATION_TESTS=1
+export YOUTRACK_RUN_APPS_ALL_PROJECTS_TEST=1
+export YOUTRACK_TEST_APP_NAME="your-app-name"
+export YOUTRACK_TEST_PROJECT_LEADER="admin"
