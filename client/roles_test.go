@@ -625,24 +625,40 @@ func TestGetYoutrackRoleByName(t *testing.T) {
 
 			got, err := client.GetYoutrackRoleByName(context.Background(), tc.lookup)
 			if tc.wantErr {
-				if err == nil {
-					t.Fatal(errExpectedError)
-				}
-				if IsNotFound(err) != tc.wantMiss {
-					t.Fatalf("IsNotFound = %v, want %v (err: %v)", IsNotFound(err), tc.wantMiss, err)
-				}
-				if IsRoleNotFoundError(err) != tc.wantMiss {
-					t.Fatalf("IsRoleNotFoundError = %v, want %v (err: %v)", IsRoleNotFoundError(err), tc.wantMiss, err)
-				}
+				assertRoleLookupFailed(t, err, tc.wantMiss)
 				return
 			}
-			if err != nil {
-				t.Fatalf(fmtUnexpectedError, err)
-			}
-			if got.Id != tc.wantID {
-				t.Fatalf(fmtUnexpectedID, got.Id, tc.wantID)
-			}
+			assertRoleFound(t, got, err, tc.wantID)
 		})
+	}
+}
+
+// assertRoleLookupFailed checks that a failed lookup reports absence exactly when
+// wantMiss says it should. Both predicates must agree: a miss satisfies the general
+// and the role-specific one, while any other failure satisfies neither.
+func assertRoleLookupFailed(t *testing.T, err error, wantMiss bool) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal(errExpectedError)
+	}
+	if IsNotFound(err) != wantMiss {
+		t.Fatalf("IsNotFound = %v, want %v (err: %v)", IsNotFound(err), wantMiss, err)
+	}
+	if IsRoleNotFoundError(err) != wantMiss {
+		t.Fatalf("IsRoleNotFoundError = %v, want %v (err: %v)", IsRoleNotFoundError(err), wantMiss, err)
+	}
+}
+
+// assertRoleFound checks that a successful lookup returned the expected role.
+func assertRoleFound(t *testing.T, got *Role, err error, wantID string) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if got.Id != wantID {
+		t.Fatalf(fmtUnexpectedID, got.Id, wantID)
 	}
 }
 
