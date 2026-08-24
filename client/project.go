@@ -278,7 +278,7 @@ func (c *Client) GetProjectCustomFieldByName(ctx context.Context, projectID, fie
 		}
 	}
 
-	return nil, fmt.Errorf("project custom field with name %q not found in project %q", fieldName, projectID)
+	return nil, notFoundf("project custom field with name %q in project %q", fieldName, projectID)
 }
 
 // GetProjectCustomField reads a specific custom field attachment in a project.

@@ -23,7 +23,7 @@ const (
 	errMarshalCustomField = "failed to marshal custom field: %w"
 )
 
-var errCustomFieldNotFound = errors.New("custom field not found")
+var errCustomFieldNotFound = fmt.Errorf("custom field %w", ErrNotFound)
 
 // FieldType represents a YouTrack custom field type descriptor.
 type FieldType struct {

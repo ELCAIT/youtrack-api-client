@@ -109,7 +109,7 @@ func (c *Client) GetUserByLogin(ctx context.Context, login string) (*Holder, err
 		return nil, fmt.Errorf("failed to get users: %w", err)
 	}
 	if match == nil {
-		return nil, fmt.Errorf("user with login '%s' not found", login)
+		return nil, notFoundf("user with login %q", login)
 	}
 
 	return match, nil
@@ -127,7 +127,7 @@ func (c *Client) GetUserGroupByName(ctx context.Context, name string) (*Holder, 
 		return nil, fmt.Errorf("failed to get user groups: %w", err)
 	}
 	if match == nil {
-		return nil, fmt.Errorf("user group with name '%s' not found", name)
+		return nil, notFoundf("user group with name %q", name)
 	}
 
 	return match, nil
@@ -235,7 +235,7 @@ func (c *Client) GetAllUsersGroup(ctx context.Context) (*NestedGroup, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("all-users group not found")
+	return nil, notFoundf("all-users group")
 }
 
 // DeleteGroup deletes a YouTrack group by ID. The successorID is the ID of

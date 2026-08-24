@@ -20,7 +20,7 @@ const (
 	errMarshalStateBundleVal = "failed to marshal state bundle value: %w"
 )
 
-var errStateBundleNotFound = errors.New("state bundle not found")
+var errStateBundleNotFound = fmt.Errorf("state bundle %w", ErrNotFound)
 
 // StateBundleElement represents a single state value inside a state bundle.
 type StateBundleElement struct {

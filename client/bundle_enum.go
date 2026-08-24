@@ -16,7 +16,7 @@ const (
 	errMarshalEnumBundle  = "failed to marshal enum bundle: %w"
 )
 
-var errEnumBundleNotFound = errors.New("enum bundle not found")
+var errEnumBundleNotFound = fmt.Errorf("enum bundle %w", ErrNotFound)
 
 // EnumBundleElement represents a single value inside an enum bundle.
 type EnumBundleElement struct {
