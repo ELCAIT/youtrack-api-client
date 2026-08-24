@@ -484,3 +484,216 @@ func TestDeleteYoutrackRole(t *testing.T) {
 		})
 	}
 }
+
+// --- ListYoutrackRoles / GetYoutrackRoleByName ---
+
+func TestListYoutrackRoles(t *testing.T) {
+	t.Parallel()
+
+	roles := []Role{
+		{Id: testRoleID, Key: testRoleKey, Name: testRoleName},
+		{Id: "role-2", Key: "reader", Name: "ELCA Reader"},
+	}
+
+	tests := []struct {
+		name      string
+		top, skip int
+		handler   http.HandlerFunc
+		wantLen   int
+		wantErr   bool
+	}{
+		{
+			name: "returns roles",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				encodeJSON(t, w, roles)
+			},
+			wantLen: 2,
+		},
+		{
+			name: "passes pagination to the query",
+			top:  10,
+			skip: 20,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				if q.Get("$top") != "10" || q.Get("$skip") != "20" {
+					t.Errorf("unexpected pagination: $top=%q $skip=%q", q.Get("$top"), q.Get("$skip"))
+				}
+				if !strings.Contains(q.Get("fields"), "permissions(") {
+					t.Errorf("unexpected fields: %q", q.Get("fields"))
+				}
+				encodeJSON(t, w, roles)
+			},
+			wantLen: 2,
+		},
+		{
+			name: "returns error on server failure",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			wantErr: true,
+		},
+		{
+			name: "returns error on invalid JSON",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(testInvalidJSON))
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, tc.handler)
+			defer server.Close()
+
+			got, err := client.ListYoutrackRoles(context.Background(), tc.top, tc.skip)
+			if checkErr(t, err, tc.wantErr) {
+				return
+			}
+			if len(got) != tc.wantLen {
+				t.Fatalf("unexpected role count: got %d, want %d", len(got), tc.wantLen)
+			}
+		})
+	}
+}
+
+func TestGetYoutrackRoleByName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		lookup   string
+		handler  http.HandlerFunc
+		wantID   string
+		wantErr  bool
+		wantMiss bool
+	}{
+		{
+			name:   "finds an exact match",
+			lookup: "ELCA Reader",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				encodeJSON(t, w, []Role{{Id: testRoleID, Name: testRoleName}, {Id: "role-2", Name: "ELCA Reader"}})
+			},
+			wantID: "role-2",
+		},
+		{
+			name:   "falls back to a case-insensitive match",
+			lookup: "elca reader",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				encodeJSON(t, w, []Role{{Id: "role-2", Name: "ELCA Reader"}})
+			},
+			wantID: "role-2",
+		},
+		{
+			name:   "reports not found when no role matches",
+			lookup: "ELCA Nonexistent",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				encodeJSON(t, w, []Role{{Id: testRoleID, Name: testRoleName}})
+			},
+			wantErr:  true,
+			wantMiss: true,
+		},
+		{
+			name:   "reports not found on an empty instance",
+			lookup: "ELCA Reader",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				encodeJSON(t, w, []Role{})
+			},
+			wantErr:  true,
+			wantMiss: true,
+		},
+		{
+			// A transport failure must never be reported as absence: a caller that
+			// treats it as "role missing" would fail startup validation spuriously.
+			name:   "does not report not found on server failure",
+			lookup: "ELCA Reader",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, tc.handler)
+			defer server.Close()
+
+			got, err := client.GetYoutrackRoleByName(context.Background(), tc.lookup)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal(errExpectedError)
+				}
+				if IsNotFound(err) != tc.wantMiss {
+					t.Fatalf("IsNotFound = %v, want %v (err: %v)", IsNotFound(err), tc.wantMiss, err)
+				}
+				if IsRoleNotFoundError(err) != tc.wantMiss {
+					t.Fatalf("IsRoleNotFoundError = %v, want %v (err: %v)", IsRoleNotFoundError(err), tc.wantMiss, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf(fmtUnexpectedError, err)
+			}
+			if got.Id != tc.wantID {
+				t.Fatalf(fmtUnexpectedID, got.Id, tc.wantID)
+			}
+		})
+	}
+}
+
+// TestGetYoutrackRoleByNamePagesUntilShortPage proves the lookup does not stop at the
+// first page: the match only appears on page two.
+func TestGetYoutrackRoleByNamePagesUntilShortPage(t *testing.T) {
+	t.Parallel()
+
+	firstPage := make([]Role, roleLookupPageSize)
+	for i := range firstPage {
+		firstPage[i] = Role{Id: "filler", Name: "Filler Role"}
+	}
+
+	var pages int
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		if r.URL.Query().Get("$skip") == "" {
+			encodeJSON(t, w, firstPage)
+			return
+		}
+		encodeJSON(t, w, []Role{{Id: "role-2", Name: "ELCA Reader"}})
+	})
+	defer server.Close()
+
+	got, err := client.GetYoutrackRoleByName(context.Background(), "ELCA Reader")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if got.Id != "role-2" {
+		t.Fatalf(fmtUnexpectedID, got.Id, "role-2")
+	}
+	if pages != 2 {
+		t.Fatalf("unexpected page count: got %d, want 2", pages)
+	}
+}
+
+// TestRoleNotFoundPredicateDoesNotCrossTalk keeps the entity-specific predicate
+// narrow: an app miss must not read as a role miss, and vice versa.
+func TestRoleNotFoundPredicateDoesNotCrossTalk(t *testing.T) {
+	t.Parallel()
+
+	roleMiss := entityNotFoundf(errRoleNotFound, "role with name %q", "ELCA Reader")
+	appMiss := entityNotFoundf(errAppNotFound, "app with name %q", "Diagram Editor")
+
+	if !IsRoleNotFoundError(roleMiss) || !IsNotFound(roleMiss) {
+		t.Fatal("role miss should satisfy both IsRoleNotFoundError and IsNotFound")
+	}
+	if IsRoleNotFoundError(appMiss) {
+		t.Fatal("app miss must not satisfy IsRoleNotFoundError")
+	}
+	if IsAppNotFoundError(roleMiss) {
+		t.Fatal("role miss must not satisfy IsAppNotFoundError")
+	}
+}

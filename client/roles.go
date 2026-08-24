@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,11 +20,19 @@ const (
 	youtrackPermissionsFieldsParam = "fields=id,name,key"
 	permissionGraphFieldsParam     = "fields=id,name,key,impliedPermissions(id,name,key),dependentPermissions(id,name,key)"
 	specificYoutrackRole           = "%s/%s/%s?%s"
-	roleFieldsQueryParam           = "fields=id,key,name,description,permissions(id,key,name)"
+	roleFields                     = "id,key,name,description,permissions(id,key,name)"
+	roleFieldsQueryParam           = "fields=" + roleFields
 	youtrackRolePermByIDAPIPath    = "%s/api/roles/%s/permissions/%s"
+
+	// roleLookupPageSize is the page size used when paging through roles to find
+	// a match by name.
+	roleLookupPageSize = 100
 
 	errMarshalRole = "failed to marshal role: %w"
 )
+
+// errRoleNotFound is returned by GetYoutrackRoleByName when no role matches the name.
+var errRoleNotFound = fmt.Errorf("role %w", ErrNotFound)
 
 // GetAllPermissions returns a merged permission list from the YouTrack API (primary) and Hub API.
 // YouTrack key-style IDs take precedence; Hub-only entries are appended.
@@ -121,6 +130,64 @@ func mergePermissionLists(primary, secondary []Permission) []Permission {
 	}
 
 	return result
+}
+
+// ListYoutrackRoles returns the roles defined on the instance and supports optional
+// pagination via top/skip. Pass 0 for top and skip to use the default server-side
+// pagination.
+func (c *Client) ListYoutrackRoles(ctx context.Context, top, skip int) ([]Role, error) {
+	query := withPagination(roleFields, top, skip)
+	endpoint := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, youtrackRolesAPIPath, query)
+
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list roles request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list roles: %w", err)
+	}
+
+	var roles []Role
+	if err = json.Unmarshal(body, &roles); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal roles response: %w", err)
+	}
+
+	return roles, nil
+}
+
+// IsRoleNotFoundError checks whether an error indicates that a role could not be found by name.
+// Use IsNotFound instead when the entity type does not matter.
+func IsRoleNotFoundError(err error) bool {
+	return errors.Is(err, errRoleNotFound)
+}
+
+// GetYoutrackRoleByName retrieves a role by its name, paging through all roles. An
+// exact match wins over a case-insensitive one on any page. It returns an error
+// wrapping ErrNotFound when no role matches; test for it with IsNotFound.
+//
+// Role names are what configuration and documentation refer to ("ELCA Reader"),
+// while assignment APIs need the role ID, so callers typically resolve names once
+// at startup and cache the result rather than looking them up per operation.
+func (c *Client) GetYoutrackRoleByName(ctx context.Context, name string) (*Role, error) {
+	role, err := lookupByNamePaginated(ctx, roleLookupPageSize, name, c.getRolePage, roleName)
+	if err != nil {
+		return nil, err
+	}
+	if role != nil {
+		return role, nil
+	}
+
+	return nil, entityNotFoundf(errRoleNotFound, "role with name %q", name)
+}
+
+func (c *Client) getRolePage(ctx context.Context, skip int) ([]Role, error) {
+	return c.ListYoutrackRoles(ctx, roleLookupPageSize, skip)
+}
+
+func roleName(role Role) string {
+	return role.Name
 }
 
 // GetYoutrackRoleById returns a YouTrack role by ID.
