@@ -61,7 +61,7 @@ const (
 )
 
 // errAppNotFound is returned by GetAppByName when no app matches the name.
-var errAppNotFound = errors.New("app not found")
+var errAppNotFound = fmt.Errorf("app %w", ErrNotFound)
 
 // ListApps returns the apps installed on the instance and supports optional
 // pagination via top/skip. Pass 0 for top and skip to use the default
@@ -110,9 +110,15 @@ func (c *Client) GetAppByID(ctx context.Context, appID string) (*App, error) {
 	return &app, nil
 }
 
+// IsAppNotFoundError checks whether an error indicates that an app could not be found by name.
+// Use IsNotFound instead when the entity type does not matter.
+func IsAppNotFoundError(err error) bool {
+	return errors.Is(err, errAppNotFound)
+}
+
 // GetAppByName retrieves an app by its name, paging through all apps. An exact
 // match wins over a case-insensitive one on any page. It returns an error
-// wrapping errAppNotFound when no app matches.
+// wrapping ErrNotFound when no app matches; test for it with IsNotFound.
 func (c *Client) GetAppByName(ctx context.Context, name string) (*App, error) {
 	app, err := lookupByNamePaginated(ctx, appLookupPageSize, name, c.getAppPage, appName)
 	if err != nil {
@@ -122,7 +128,7 @@ func (c *Client) GetAppByName(ctx context.Context, name string) (*App, error) {
 		return app, nil
 	}
 
-	return nil, fmt.Errorf("%w: name '%s'", errAppNotFound, name)
+	return nil, entityNotFoundf(errAppNotFound, "app with name %q", name)
 }
 
 func (c *Client) getAppPage(ctx context.Context, skip int) ([]App, error) {
