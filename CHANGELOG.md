@@ -1,3 +1,14 @@
+## 1.4.0
+FEATURES:
+- Add support for calling the HTTP handler endpoints that installed apps expose, so an app's own configuration can be read and written from Go. Unlike the app scoping endpoints added in 1.3.0, these are part of the **documented** YouTrack API:
+  - `GetProjectAppEndpoint(ctx, projectID, ref)`, `PutProjectAppEndpoint(ctx, projectID, ref, payload)`, `PostProjectAppEndpoint(ctx, projectID, ref, payload)`, and `DeleteProjectAppEndpoint(ctx, projectID, ref)` issue requests against `{host}/api/admin/projects/{projectID}/extensionEndpoints/{app}/{handler}/{path}`. `DeleteProjectAppEndpoint` treats an already-absent entity as success, like the other `Delete` methods in the client.
+  - `AppEndpointRef{AppName, Handler, Path}` identifies the endpoint: the app's manifest name (for example `release-manager`), the backend script filename without its `.js` extension (for example `backend`), and the path the handler declares (for example `app-settings`).
+  - Request and response bodies are defined by the app rather than by YouTrack, so they are passed through as raw JSON (`json.RawMessage`) and the caller owns the schema. This keeps any single app's settings format out of the client.
+  - Only the project scope is implemented. The API also defines global, issue, article, and user scopes; they can be added the same way when a caller needs them.
+
+IMPROVEMENTS:
+- The app HTTP handler endpoints were verified against a live YouTrack 2026.2 instance with the Release Manager app (1.2.2). Two behaviours found there are documented in `client/apps_endpoints.go`, because they are properties of the app rather than of YouTrack and they shape how callers must write: a handler that stores its settings as one JSON blob replaces the whole blob on write, so a partial payload silently drops the keys it omits (read, overlay the fields you own, write the merged result back); and a handler may reject values it considers incomplete, including the empty state it reports before it is first configured, so a value read from an endpoint cannot be assumed writable back unchanged.
+
 ## 1.3.0
 FEATURES:
 - Add app management support, so an app can be enabled or disabled per project, or enabled for every project at once (issue #29):

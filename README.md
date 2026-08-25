@@ -93,6 +93,64 @@ These calls require the *Update Project* permission on the target project. For
 background on how apps are scoped globally versus per project, see the
 [JetBrains documentation](https://www.jetbrains.com/help/youtrack/devportal/apps-global-project-level.html).
 
+## App HTTP handler endpoints
+
+Installed apps can expose their own REST endpoints, which is how an app's
+per-project configuration is read and written. Unlike the scoping endpoints
+above, these **are** part of the documented YouTrack API.
+
+An endpoint is identified by the app's manifest name, the backend script
+filename without its `.js` extension, and the path the handler declares:
+
+```go
+ref := youtrack.AppEndpointRef{
+	AppName: "release-manager", // manifest name, not the display title
+	Handler: "backend",         // backend.js
+	Path:    "app-settings",    // path declared by the handler
+}
+
+raw, err := client.GetProjectAppEndpoint(ctx, projectID, ref)
+if err != nil {
+	log.Fatalf("read app settings: %v", err)
+}
+
+// The body is defined by the app, not by YouTrack, so the caller owns the schema.
+var settings map[string]any
+if err := json.Unmarshal(raw, &settings); err != nil {
+	log.Fatalf("decode app settings: %v", err)
+}
+
+// Read, overlay only the fields you own, then write the merged result back.
+settings["customFieldNames"] = []string{"State"}
+if _, err := client.PutProjectAppEndpoint(ctx, projectID, ref, settings); err != nil {
+	log.Fatalf("write app settings: %v", err)
+}
+```
+
+These calls resolve to
+`{host}/api/admin/projects/{projectID}/extensionEndpoints/{app}/{handler}/{path}`
+and require the same permissions as the scope entity — for the project scope,
+access to the target project. `PostProjectAppEndpoint` and
+`DeleteProjectAppEndpoint` are available too; the latter treats an
+already-absent entity as success.
+
+> **Warning**
+> The request and response bodies belong to the app, so the app decides how it
+> handles them. Two behaviours are common enough to plan for:
+>
+> - **Writes usually replace the whole payload.** An app that stores its
+>   settings as a single JSON blob will drop every key your payload omits.
+>   Always read the current value, overlay the fields you own, and write the
+>   merged result back — the read-modify-write above is the safe shape.
+> - **Reads are not always writable back.** A handler may validate its payload
+>   and reject values it considers incomplete, including the empty state it
+>   reports before it has ever been configured. Do not assume a round-trip is
+>   lossless.
+
+Only the project scope is implemented. The API also defines global, issue,
+article, and user scopes; see the
+[JetBrains documentation](https://www.jetbrains.com/help/youtrack/devportal/apps-reference-http-handlers.html).
+
 ## Integration Tests
 
 Integration tests are opt-in and require a reachable YouTrack instance.
