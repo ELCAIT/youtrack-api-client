@@ -15,6 +15,7 @@ const (
 	// HTTP methods
 	httpMethodGet    = "GET"
 	httpMethodPost   = "POST"
+	httpMethodPut    = "PUT"
 	httpMethodDelete = "DELETE"
 
 	// HTTP headers
