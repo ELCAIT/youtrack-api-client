@@ -33,31 +33,21 @@ var testAppEndpointRef = AppEndpointRef{
 func TestGetProjectAppEndpoint(t *testing.T) {
 	t.Parallel()
 
+	// The body is returned to the caller undecoded, so the response the handler
+	// sends is also what the call must yield.
 	tests := []struct {
-		name       string
-		status     int
-		response   string
-		wantErr    bool
-		wantResult string
+		name     string
+		status   int
+		response string
+		wantErr  bool
 	}{
 		{
-			name:       "returns raw settings payload",
-			status:     http.StatusOK,
-			response:   `{"customFieldNames":["State"],"products":[]}`,
-			wantResult: `{"customFieldNames":["State"],"products":[]}`,
+			name:     "returns raw settings payload",
+			status:   http.StatusOK,
+			response: `{"customFieldNames":["State"],"products":[]}`,
 		},
-		{
-			name:     "propagates handler error",
-			status:   http.StatusBadRequest,
-			response: `{"error":"At least one custom field name is required"}`,
-			wantErr:  true,
-		},
-		{
-			name:     "propagates not found",
-			status:   http.StatusNotFound,
-			response: `{"error":"Not Found"}`,
-			wantErr:  true,
-		},
+		{name: "propagates handler error", status: http.StatusBadRequest, wantErr: true},
+		{name: "propagates not found", status: http.StatusNotFound, wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -65,34 +55,17 @@ func TestGetProjectAppEndpoint(t *testing.T) {
 			t.Parallel()
 
 			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodGet {
-					t.Errorf(errUnexpectedMethod, r.Method)
-				}
-				if r.URL.Path != testAppEndpointURL {
-					t.Errorf(fmtUnexpectedEndpointPath, r.URL.Path, testAppEndpointURL)
-				}
-
-				w.WriteHeader(tc.status)
-				if _, err := w.Write([]byte(tc.response)); err != nil {
-					t.Fatalf("failed to write response: %v", err)
-				}
+				assertEndpointRequest(t, r, http.MethodGet)
+				writeResponse(t, w, tc.status, tc.response)
 			})
 			defer server.Close()
 
 			got, err := client.GetProjectAppEndpoint(context.Background(), testAppEndpointProject, testAppEndpointRef)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal(errExpectedError)
-				}
-
+			if checkErr(t, err, tc.wantErr) {
 				return
 			}
-
-			if err != nil {
-				t.Fatalf(fmtUnexpectedError, err)
-			}
-			if string(got) != tc.wantResult {
-				t.Errorf(fmtUnexpectedBody, got, tc.wantResult)
+			if string(got) != tc.response {
+				t.Errorf(fmtUnexpectedBody, got, tc.response)
 			}
 		})
 	}
@@ -113,14 +86,9 @@ func TestPutProjectAppEndpoint(t *testing.T) {
 		{
 			name:     "sends payload and returns response",
 			status:   http.StatusOK,
-			response: wantBody,
+			response: `{"customFieldNames":["State"],"products":[]}`,
 		},
-		{
-			name:     "propagates validation error",
-			status:   http.StatusBadRequest,
-			response: `{"error":"At least one custom field name is required"}`,
-			wantErr:  true,
-		},
+		{name: "propagates validation error", status: http.StatusBadRequest, wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -128,39 +96,15 @@ func TestPutProjectAppEndpoint(t *testing.T) {
 			t.Parallel()
 
 			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPut {
-					t.Errorf(errUnexpectedMethod, r.Method)
-				}
-				if r.URL.Path != testAppEndpointURL {
-					t.Errorf(fmtUnexpectedEndpointPath, r.URL.Path, testAppEndpointURL)
-				}
-
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					t.Fatalf("failed to read request body: %v", err)
-				}
-				if got := strings.TrimSpace(string(body)); got != wantBody {
-					t.Errorf(fmtUnexpectedBody, got, wantBody)
-				}
-
-				w.WriteHeader(tc.status)
-				if _, err := w.Write([]byte(tc.response)); err != nil {
-					t.Fatalf("failed to write response: %v", err)
-				}
+				assertEndpointRequest(t, r, http.MethodPut)
+				assertRequestBody(t, r, wantBody)
+				writeResponse(t, w, tc.status, tc.response)
 			})
 			defer server.Close()
 
 			got, err := client.PutProjectAppEndpoint(context.Background(), testAppEndpointProject, testAppEndpointRef, payload)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal(errExpectedError)
-				}
-
+			if checkErr(t, err, tc.wantErr) {
 				return
-			}
-
-			if err != nil {
-				t.Fatalf(fmtUnexpectedError, err)
 			}
 			if string(got) != tc.response {
 				t.Errorf(fmtUnexpectedBody, got, tc.response)
@@ -169,18 +113,49 @@ func TestPutProjectAppEndpoint(t *testing.T) {
 	}
 }
 
+// assertEndpointRequest checks that a request reached the project-scoped app
+// endpoint with the expected HTTP method.
+func assertEndpointRequest(t *testing.T, r *http.Request, wantMethod string) {
+	t.Helper()
+
+	if r.Method != wantMethod {
+		t.Errorf(errUnexpectedMethod, r.Method)
+	}
+	if r.URL.Path != testAppEndpointURL {
+		t.Errorf(fmtUnexpectedEndpointPath, r.URL.Path, testAppEndpointURL)
+	}
+}
+
+// assertRequestBody checks the JSON body a request carried, ignoring the
+// trailing newline json.Encoder appends.
+func assertRequestBody(t *testing.T, r *http.Request, want string) {
+	t.Helper()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("failed to read request body: %v", err)
+	}
+	if got := strings.TrimSpace(string(body)); got != want {
+		t.Errorf(fmtUnexpectedBody, got, want)
+	}
+}
+
+// writeResponse writes a canned status and body from a test handler.
+func writeResponse(t *testing.T, w http.ResponseWriter, status int, body string) {
+	t.Helper()
+
+	w.WriteHeader(status)
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Fatalf("failed to write response: %v", err)
+	}
+}
+
 // TestPostProjectAppEndpoint checks that POST reaches the endpoint with a body.
 func TestPostProjectAppEndpoint(t *testing.T) {
 	t.Parallel()
 
 	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf(errUnexpectedMethod, r.Method)
-		}
-		if r.URL.Path != testAppEndpointURL {
-			t.Errorf(fmtUnexpectedEndpointPath, r.URL.Path, testAppEndpointURL)
-		}
-
+		assertEndpointRequest(t, r, http.MethodPost)
 		encodeJSON(t, w, map[string]any{"ok": true})
 	})
 	defer server.Close()
@@ -241,29 +216,13 @@ func TestDeleteProjectAppEndpoint(t *testing.T) {
 			t.Parallel()
 
 			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodDelete {
-					t.Errorf(errUnexpectedMethod, r.Method)
-				}
-				if r.URL.Path != testAppEndpointURL {
-					t.Errorf(fmtUnexpectedEndpointPath, r.URL.Path, testAppEndpointURL)
-				}
-
+				assertEndpointRequest(t, r, http.MethodDelete)
 				w.WriteHeader(tc.status)
 			})
 			defer server.Close()
 
 			err := client.DeleteProjectAppEndpoint(context.Background(), testAppEndpointProject, testAppEndpointRef)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal(errExpectedError)
-				}
-
-				return
-			}
-
-			if err != nil {
-				t.Fatalf(fmtUnexpectedError, err)
-			}
+			checkErr(t, err, tc.wantErr)
 		})
 	}
 }
