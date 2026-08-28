@@ -42,6 +42,12 @@ DEFAULT_PAIRS = {
     "CustomField": "CustomField",
     "Agile": "Agile",
     "Sprint": "Sprint",
+    # Hub schema names are lowercase and differ from the YouTrack spelling.
+    # These pair only against the Hub spec; they are ignored against the
+    # YouTrack one, where the schemas do not exist.
+    "Service": "service",
+    "OAuth2AuthModule": "oauth2authmodule",
+    "AzureAuthModule": "azureauthmodule",
 }
 
 # Go fields the spec does not declare but which are confirmed correct against a
@@ -49,6 +55,9 @@ DEFAULT_PAIRS = {
 # drift stays visible. Each entry records how it was confirmed.
 CONFIRMED_GO_FIELDS = {
     ("User", "password"): "write-only; absent from the read schema by design",
+    # Hub spec says isDefault; the server returns and accepts `default`.
+    ("OAuth2AuthModule", "default"): "server returns `default`, not the spec's `isDefault`",
+    ("AzureAuthModule", "default"): "server returns `default`, not the spec's `isDefault`",
     ("EnumBundle", "name"): "returned live on 2026.2; spec omits it",
     ("StateBundle", "name"): "returned live on 2026.2; spec omits it",
     ("NestedGroup", "description"): "returned live on 2026.2; spec omits it",
@@ -73,6 +82,13 @@ INTENTIONAL_OMISSIONS = {
     ("CustomField", "instances"): "back-reference to project attachments",
     # Confirmed broken or empty on YouTrack 2026.2.
     ("Project", "startingNumber"): "HTTP 500 on 2026.2, see skill",
+    # Hub: SSO/provisioning surface the client deliberately does not model.
+    ("OAuth2AuthModule", "autoJoinGroups"): "SSO group mapping, not modelled",
+    ("OAuth2AuthModule", "groupMappings"): "SSO group mapping, not modelled",
+    ("OAuth2AuthModule", "attributeMappings"): "SSO claim mapping, not modelled",
+    ("AzureAuthModule", "autoJoinGroups"): "SSO group mapping, not modelled",
+    ("AzureAuthModule", "groupMappings"): "SSO group mapping, not modelled",
+    ("AzureAuthModule", "attributeMappings"): "SSO claim mapping, not modelled",
 }
 
 

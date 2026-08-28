@@ -1,33 +1,64 @@
 ---
 name: youtrack-openapi-drift
-description: Use when checking this client's Go models against YouTrack's own OpenAPI specification — after a YouTrack version bump, before adding a resource, or when a field "should be there but isn't". Covers pulling /api/openapi.json from a live instance, running the drift script, and (critically) how to tell a real finding from the spec's many false positives, since the spec and the running server disagree in both directions. Pair with youtrack-api-integration when the outcome is adding an endpoint.
+description: Use when checking this client's Go models against the YouTrack and Hub OpenAPI specs — after a version bump, before adding or changing a resource's fields, or when a field "should be there but isn't". Establishes the rule that the spec is a draft and the live instance is the authority: covers pulling both specs (/api/openapi.json and /hub/api/rest/openapi.json), running the drift script, confirming each finding against a real server, and the catalogue of known false positives, since the specs and the server disagree in both directions. Pair with youtrack-api-integration when the outcome is adding an endpoint.
 ---
 
-# Checking this client against YouTrack's OpenAPI spec
+# Checking this client against the OpenAPI specs
 
-YouTrack publishes a generated OpenAPI 3.0 document at `/api/openapi.json` on
-every instance. It is a genuinely useful **drift check** — it has already
-caught a silently-ignored field and a missing operator-critical one — but it is
-**not a source of truth**, and it must never be used to generate this client.
-See "Why not generate" at the bottom before proposing that.
+This client wraps **two** APIs, and each publishes its own generated OpenAPI
+3.0 document. Check both — they cover different halves of this client, and
+neither is a superset of the other:
 
-## Pulling the spec
+| Spec | Path | Covers |
+| --- | --- | --- |
+| YouTrack | `/api/openapi.json` | projects, custom fields, bundles, issue link types, global settings, apps |
+| Hub | `/hub/api/rest/openapi.json` | users, groups, roles, permissions, auth modules, services |
+
+Most of this client's identity and auth surface is **Hub**, so checking only
+the YouTrack spec leaves `Service`, `OAuth2AuthModule`, and `AzureAuthModule`
+unverified.
+
+**The rule this skill exists to enforce: the spec is the draft, the live
+instance is the authority.** Use a spec to discover what fields a resource
+*might* have — it is far faster than reading HTML docs and it is how the two
+missing `immutable` fields were found. Then confirm every field against a real
+server before committing to it, because both specs disagree with the running
+server in both directions, and the failure mode is silent: YouTrack drops
+unknown field names from a query instead of rejecting them, so a wrong struct
+produces a permanently zero value and no error.
+
+Never generate the client from a spec — see "Why not generate" at the bottom
+before proposing it.
+
+## Pulling the specs
 
 ```bash
 curl -s -H "Authorization: Bearer $YOUTRACK_TOKEN" \
   "$YOUTRACK_BASE_URL/api/openapi.json" -o /tmp/openapi.json
+
+curl -s -H "Authorization: Bearer $YOUTRACK_TOKEN" \
+  "$YOUTRACK_BASE_URL/hub/api/rest/openapi.json" -o /tmp/hub-openapi.json
 ```
 
 `.envrc` normally provides both variables (see README.md "Integration Tests").
-On YouTrack 2026.2 the document is ~560KB: 157 paths, 281 operations, 232
-schemas. If it 404s and the response mentions `InstallerServletDispatcher`, the
+On 2026.2 the YouTrack document is ~560KB (157 paths, 281 operations, 232
+schemas) and the Hub one ~440KB (169 paths, 276 operations, 189 schemas). If a
+request 404s and the response mentions `InstallerServletDispatcher`, the
 instance has not finished its setup wizard — no API route exists yet.
+
+**Hub schema names are lowercase** (`service`, `oauth2authmodule`,
+`azureauthmodule`) and so do not auto-pair with the Go struct names. The script
+carries those pairings already; add `--pair Go=lowercasename` for new ones.
 
 ## Running the drift check
 
 ```bash
+# Run it once per spec; findings differ between them.
 python3 .claude/skills/youtrack-openapi-drift/scripts/drift.py \
   --spec /tmp/openapi.json --client client
+
+python3 .claude/skills/youtrack-openapi-drift/scripts/drift.py \
+  --spec /tmp/hub-openapi.json --client client
 ```
 
 It pairs each Go struct with the schema of the same name (plus explicit
@@ -54,6 +85,10 @@ failure modes seen in practice, all confirmed on 2026.2:
    `Permission.key` are all absent from the schema and all returned live. The Go
    structs are right and the spec is wrong. These are suppressed in the script's
    `CONFIRMED_GO_FIELDS`.
+   **The Hub spec also disagrees on a name:** it declares `isDefault` on the
+   auth modules, but the server returns and accepts `default`, which is what the
+   Go structs use. Renaming the tag to match the spec would silently break the
+   field. Always confirm a rename against the server before making it.
 2. **The spec declares fields the server cannot serve.** `Project.startingNumber`
    is in the schema and returns **HTTP 500** on a live instance
    (`Cannot invoke "java.lang.Number.longValue()" ... is null`). `createdBy` and
@@ -110,6 +145,20 @@ modelling.
   modified or deleted; on a stock instance 6 of 9 roles report `true`. Without
   it an operator retries doomed writes forever. Added, wired into `roleFields`,
   and verified live.
+- **`Service.immutable` was missing, same story** (found via the *Hub* spec, not
+  the YouTrack one). The bundled services — "YouTrack", "YouTrack
+  Administration", "YouTrack Mobile", "Konnector" — all report `true`; on a
+  stock instance 4 of 5 are immutable. Added, wired into `serviceFields`, and
+  verified live.
+- **`SavedQuery.pinned` is absent from the spec but returned live** (found
+  while dry-running the workflow on a resource this client does not yet cover).
+  A struct drafted from the schema alone would have missed it. Recorded here as
+  a standing example of why step 3 of the `youtrack-api-integration` checklist
+  is not optional.
+- **Auth-module SSO surface is deliberately unmodelled.** `autoJoinGroups`,
+  `groupMappings`, and `attributeMappings` are real Hub features but return
+  absent on an instance that does not configure them. Suppressed as intentional;
+  model them only when a caller actually needs SSO group/claim mapping.
 
 ## When to run this
 
@@ -130,10 +179,21 @@ const-block style, and record the finding in `CHANGELOG.md` with the evidence.
 
 Asked and answered; do not re-litigate without new information.
 
-- YouTrack's spec is a known-bad generator input: it produces
+- **The generated models would be wrong in exactly the places that matter.**
+  This was tested, not assumed: `openapi-generator -g go` on the 2026.2 spec
+  emits 233 model files that **do compile** (Go's struct embedding absorbs the
+  118-of-232 schemas that redefine an inherited property). The problem is
+  fidelity, not compilation. The generated `EnumBundle` has **no `Name` field**,
+  because the spec omits it — yet the server returns one. Unmarshal a real
+  response into the generated type and the name is silently dropped; re-marshal
+  and you write it back as absent. Every spec-omits-reality case in the false
+  positives above becomes a silent data-loss bug in a generated client, and the
+  drift check that would have caught it only works because there is a
+  hand-written struct to compare against.
+  Other languages fare worse — the same spec produces
   [uncompilable Python](https://github.com/OpenAPITools/openapi-generator/issues/17910)
   and [uncompilable Kotlin](https://github.com/OpenAPITools/openapi-generator/issues/11306)
-  via circular `allOf` inheritance and redefined inherited members.
+  — but for Go the argument is fidelity and the points below, not compilation.
 - Generation cannot express what this client's models encode: the
   `omitempty`-versus-explicit-empty decisions in `Service` and
   `OAuth2AuthModule` exist because Hub *leaves omitted keys untouched*, so
