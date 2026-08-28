@@ -6,13 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 const (
 	issueLinkTypesAPIPath    = "api/issueLinkTypes"
 	issueLinkTypeFieldsParam = "fields=id,name,sourceToTarget,targetToSource,directed,aggregation,readOnly,localizedName,localizedSourceToTarget,localizedTargetToSource,$type"
 	allIssueLinkTypesPath    = pathWithFieldsFormat
-	specificIssueLinkType    = "%s/%s/%s?%s"
+	// resourceByIDWithFieldsFormat addresses a single entity by ID with a
+	// fields query: host, API path, ID, query. It is shared by several
+	// resources rather than specific to issue link types.
+	resourceByIDWithFieldsFormat = "%s/%s/%s?%s"
 
 	errMarshalIssueLinkType = "failed to marshal issue link type: %w"
 )
@@ -56,7 +60,7 @@ func (c *Client) GetAllIssueLinkTypes(ctx context.Context) ([]IssueLinkType, err
 // GetIssueLinkTypeByID returns a specific issue link type by ID.
 func (c *Client) GetIssueLinkTypeByID(ctx context.Context, id string) (*IssueLinkType, error) {
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet,
-		fmt.Sprintf(specificIssueLinkType, c.HostURL, issueLinkTypesAPIPath, id, issueLinkTypeFieldsParam), nil)
+		fmt.Sprintf(resourceByIDWithFieldsFormat, c.HostURL, issueLinkTypesAPIPath, url.PathEscape(id), issueLinkTypeFieldsParam), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get issue link type request: %w", err)
 	}
@@ -130,7 +134,7 @@ func (c *Client) UpdateIssueLinkType(ctx context.Context, id string, issueLinkTy
 	}
 
 	req, err := http.NewRequestWithContext(ctx, httpMethodPost,
-		fmt.Sprintf(specificIssueLinkType, c.HostURL, issueLinkTypesAPIPath, id, issueLinkTypeFieldsParam), bytes.NewReader(rb))
+		fmt.Sprintf(resourceByIDWithFieldsFormat, c.HostURL, issueLinkTypesAPIPath, url.PathEscape(id), issueLinkTypeFieldsParam), bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update issue link type request: %w", err)
 	}

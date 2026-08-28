@@ -64,14 +64,21 @@ func (c *Client) UpdateAppearanceSettings(ctx context.Context, appearanceSetting
 		return AppearanceSettings{}, fmt.Errorf("failed to update appearance settings: %w", err)
 	}
 
-	// Wait for the API to process the change (async processing)
-	waitForAsyncProcessing()
-
-	// Read back the updated settings to get the actual current state
-	result, err := c.GetAppearanceSettings(ctx)
-	if err != nil {
-		return AppearanceSettings{}, err
+	// The write is applied asynchronously, so read back until the reported
+	// settings match those that were just set. Only the fields the caller
+	// actually sent are compared, matching this method's partial-update
+	// semantics: a field left zero-valued was not written and must not be
+	// waited on.
+	want := appearanceSettingsState{
+		DateFormatID: appearanceSettings.DateFormat.ID,
+		TimeZoneID:   appearanceSettings.TimeZone.ID,
 	}
 
-	return result, nil
+	return readBackEqual(ctx, c.GetAppearanceSettings,
+		func(s AppearanceSettings) appearanceSettingsState {
+			return appearanceSettingsState{
+				DateFormatID: observedOrSkip(want.DateFormatID, s.DateFormat.ID),
+				TimeZoneID:   observedOrSkip(want.TimeZoneID, s.TimeZone.ID),
+			}
+		}, want)
 }

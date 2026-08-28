@@ -51,7 +51,11 @@ func (c *Client) UpdateBackupSettings(ctx context.Context, backupSettings Backup
 		return BackupSettings{}, fmt.Errorf("failed to update backup settings: %w", err)
 	}
 
-	waitForAsyncProcessing()
-
-	return c.GetBackupSettings(ctx)
+	// The write is applied asynchronously, so read back until the reported
+	// schedule matches the one that was just set.
+	return readBackEqual(ctx, c.GetBackupSettings,
+		func(s BackupSettings) backupSettingsState {
+			return backupSettingsState{Enabled: s.Enabled, CronExpression: s.CronExpression, Location: s.Location, FilesToKeep: s.FilesToKeep}
+		},
+		backupSettingsState{Enabled: backupSettings.Enabled, CronExpression: backupSettings.CronExpression, Location: backupSettings.Location, FilesToKeep: backupSettings.FilesToKeep})
 }

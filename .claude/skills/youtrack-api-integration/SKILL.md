@@ -81,10 +81,11 @@ when YouTrack also exposes it under `/api/...`.
   methods rather than reimplementing query building.
 - **Some writes are asynchronously applied.** A handful of YouTrack
   operations return 2xx before the change is fully visible on a subsequent
-  GET. `waitForAsyncProcessing()` exists for these; only add a new call site
-  if you've confirmed (via integration testing or docs) that the specific
-  operation actually has this behavior — don't add it speculatively to "be
-  safe", since it just adds latency everywhere else.
+  GET. Handle these with the `readBack*` helpers in `async.go`, which poll the
+  read-back until the server reports the written value, bounded by the poll
+  budget and by the caller's context (see `youtrack-go-conventions` for the
+  projection pattern). Only add one if you've confirmed the operation actually
+  behaves this way — don't add it speculatively. Never use `time.Sleep`.
 - **List responses aren't always a bare array.** Some endpoints return a bare
   JSON array, others wrap it (`{"users": [...]}`, `{"usergroups": [...]}`)
   depending on YouTrack version/config. `ListUsers`/`GetUserByLogin` handle
@@ -93,6 +94,16 @@ when YouTrack also exposes it under `/api/...`.
   discover behaves inconsistently across instances, but don't add it
   defensively where the response shape is actually stable — check real
   responses (via the docs' example payloads, or integration tests) first.
+
+## Checking the models against YouTrack's own OpenAPI spec
+
+Every instance publishes a generated OpenAPI 3.0 document at
+`/api/openapi.json`. It is the fastest way to get a resource's real field list
+before writing a struct, and to catch fields that drifted after a version bump.
+It is also wrong in both directions often enough that every finding needs
+confirming against a live instance. Use the `youtrack-openapi-drift` skill,
+which has the script and the catalogue of known false positives — do not
+generate code from the spec.
 
 ## Verifying against a real instance
 

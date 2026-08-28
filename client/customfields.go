@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 const (
@@ -90,7 +91,7 @@ type CustomFieldDefaultsUpsertModel struct {
 // GetCustomFieldByID returns a specific custom field by ID.
 func (c *Client) GetCustomFieldByID(ctx context.Context, id string) (*CustomField, error) {
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet,
-		fmt.Sprintf(customFieldByIDPath, c.HostURL, customFieldsAPIPath, id, customFieldFieldsParam), nil)
+		fmt.Sprintf(customFieldByIDPath, c.HostURL, customFieldsAPIPath, url.PathEscape(id), customFieldFieldsParam), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get custom field request: %w", err)
 	}
@@ -117,9 +118,9 @@ func IsCustomFieldNotFoundError(err error) bool {
 func (c *Client) GetCustomFieldByName(ctx context.Context, name string) (*CustomField, error) {
 	skip := 0
 	for {
-		url := fmt.Sprintf(customFieldPagePath, c.HostURL, customFieldsAPIPath, customFieldNameFields, customFieldPageSize, skip)
+		endpoint := fmt.Sprintf(customFieldPagePath, c.HostURL, customFieldsAPIPath, customFieldNameFields, customFieldPageSize, skip)
 
-		req, err := http.NewRequestWithContext(ctx, httpMethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create list custom fields request: %w", err)
 		}
@@ -184,7 +185,7 @@ func (c *Client) UpdateCustomField(ctx context.Context, id string, customField C
 	}
 
 	req, err := http.NewRequestWithContext(ctx, httpMethodPost,
-		fmt.Sprintf(customFieldByIDPath, c.HostURL, customFieldsAPIPath, id, customFieldFieldsParam), bytes.NewReader(rb))
+		fmt.Sprintf(customFieldByIDPath, c.HostURL, customFieldsAPIPath, url.PathEscape(id), customFieldFieldsParam), bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update custom field request: %w", err)
 	}

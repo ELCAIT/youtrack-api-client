@@ -54,9 +54,9 @@ func (c *Client) UpdateLocaleSettings(ctx context.Context, localeSettings Locale
 		return LocaleSettings{}, fmt.Errorf("failed to update locale settings: %w", err)
 	}
 
-	// Wait for the API to process the change (async processing)
-	waitForAsyncProcessing()
-
-	// Read back the updated settings to get the actual current state
-	return c.GetLocaleSettings(ctx)
+	// The write is applied asynchronously, so read back until the reported
+	// locale is the one that was just set.
+	return readBackEqual(ctx, c.GetLocaleSettings,
+		func(s LocaleSettings) string { return s.Locale.Locale },
+		localeSettings.Locale.Locale)
 }

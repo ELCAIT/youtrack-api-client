@@ -90,11 +90,18 @@ func (c *Client) UpdateOAuth2AuthModule(ctx context.Context, moduleID string, mo
 	}
 
 	// Hub returns an empty body on a successful update and applies it
-	// asynchronously; wait for it to settle before fetching the updated state,
+	// asynchronously; read back until the reported module reflects the write,
 	// otherwise the immediate read can still return the pre-update values.
-	waitForAsyncProcessing()
+	return readBackEqual(ctx,
+		func(ctx context.Context) (*OAuth2AuthModule, error) { return c.GetOAuth2AuthModuleByID(ctx, moduleID) },
+		func(m *OAuth2AuthModule) authModuleState {
+			if m == nil {
+				return authModuleState{}
+			}
 
-	return c.GetOAuth2AuthModuleByID(ctx, moduleID)
+			return authModuleState{Name: m.Name, Disabled: m.Disabled, ClientID: m.ClientID, ServerURL: m.ServerURL}
+		},
+		authModuleState{Name: module.Name, Disabled: module.Disabled, ClientID: module.ClientID, ServerURL: module.ServerURL})
 }
 
 // DeleteOAuth2AuthModule deletes an OAuth 2.0 auth module by its ID.

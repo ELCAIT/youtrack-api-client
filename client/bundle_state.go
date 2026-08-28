@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 const (
@@ -150,7 +151,7 @@ func (c *Client) UpdateStateBundleValue(ctx context.Context, bundleID, elementID
 		return nil, fmt.Errorf(errMarshalStateBundleVal, err)
 	}
 
-	endpoint := fmt.Sprintf("%s/%s/%s/values/%s?%s", c.HostURL, stateBundlesAPIPath, bundleID, elementID, stateBundleFieldsParam)
+	endpoint := fmt.Sprintf("%s/%s/%s/values/%s?%s", c.HostURL, stateBundlesAPIPath, url.PathEscape(bundleID), url.PathEscape(elementID), stateBundleFieldsParam)
 	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update state bundle value request: %w", err)

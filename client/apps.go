@@ -90,7 +90,7 @@ func (c *Client) ListApps(ctx context.Context, top, skip int) ([]App, error) {
 
 // GetAppByID retrieves a single app by its entity ID (for example "145-92").
 func (c *Client) GetAppByID(ctx context.Context, appID string) (*App, error) {
-	endpoint := fmt.Sprintf(specificIssueLinkType, c.HostURL, appsAPIPath, url.PathEscape(appID), appFieldsParam)
+	endpoint := fmt.Sprintf(resourceByIDWithFieldsFormat, c.HostURL, appsAPIPath, url.PathEscape(appID), appFieldsParam)
 
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {

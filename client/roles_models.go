@@ -12,11 +12,28 @@ type PermissionsResponse struct {
 
 // Role represents a YouTrack role.
 type Role struct {
-	Id          string       `json:"id,omitempty"`
+	Id string `json:"id,omitempty"`
+	// Key is not part of the YouTrack Role entity and is retained only for
+	// backward compatibility. Verified against YouTrack 2026.2: the field is
+	// absent from the OpenAPI schema, is silently ignored when sent on a
+	// create, and is never returned on a read — even when requested
+	// explicitly, because YouTrack drops unknown names from a fields query
+	// instead of rejecting them. Setting it has no effect; do not rely on it.
+	// Permission.Key, by contrast, is a real field and is populated.
+	//
+	// Deprecated: Role has no key in the YouTrack API. This field will be
+	// removed in the next major version.
 	Key         string       `json:"key,omitempty"`
 	Name        string       `json:"name,omitempty"`
 	Description string       `json:"description,omitempty"`
 	Permissions []Permission `json:"permissions,omitempty"`
+
+	// Immutable reports whether the role is built into YouTrack and cannot be
+	// modified or deleted. A reconciling caller should check it before
+	// attempting an update: the built-in roles (for example "Contributor")
+	// report true, and writes to them fail. It is read-only and is never sent
+	// on a create or update.
+	Immutable bool `json:"immutable,omitempty"`
 }
 
 // Permission represents a YouTrack permission.

@@ -69,9 +69,16 @@ func (c *Client) UpdateGlobalSettings(ctx context.Context, globalSettings Global
 		return GlobalSettings{}, fmt.Errorf("failed to update global settings: %w", err)
 	}
 
-	// Wait for the API to process the change (async processing)
-	waitForAsyncProcessing()
+	// The write is applied asynchronously, so read back until the reported
+	// license matches the one that was just set. A cleared license settles as
+	// soon as the server reports none.
+	return readBackEqual(ctx, c.GetGlobalSettings,
+		func(s GlobalSettings) string {
+			if s.License == nil {
+				return ""
+			}
 
-	// Read back the updated settings to get the actual current state
-	return c.GetGlobalSettings(ctx)
+			return s.License.License
+		},
+		wantedLicense(globalSettings))
 }
