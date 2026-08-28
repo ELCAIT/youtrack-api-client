@@ -85,11 +85,18 @@ func (c *Client) UpdateAzureAuthModule(ctx context.Context, moduleID string, mod
 	}
 
 	// Hub returns an empty body on a successful update and applies it
-	// asynchronously; wait for it to settle before fetching the updated
-	// state, matching UpdateOAuth2AuthModule.
-	waitForAsyncProcessing()
+	// asynchronously; read back until the reported module reflects the write,
+	// matching UpdateOAuth2AuthModule.
+	return readBackEqual(ctx,
+		func(ctx context.Context) (*AzureAuthModule, error) { return c.GetAzureAuthModuleByID(ctx, moduleID) },
+		func(m *AzureAuthModule) authModuleState {
+			if m == nil {
+				return authModuleState{}
+			}
 
-	return c.GetAzureAuthModuleByID(ctx, moduleID)
+			return authModuleState{Name: m.Name, Disabled: m.Disabled, ClientID: m.ClientID, ServerURL: m.ServerURL}
+		},
+		authModuleState{Name: module.Name, Disabled: module.Disabled, ClientID: module.ClientID, ServerURL: module.ServerURL})
 }
 
 // DeleteAzureAuthModule deletes a Microsoft Entra ID auth module by its ID.

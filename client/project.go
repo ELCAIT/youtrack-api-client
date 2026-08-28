@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 const (
@@ -138,8 +139,8 @@ func (c *Client) CreateProject(ctx context.Context, payload ProjectCreatePayload
 		return nil, fmt.Errorf(errMarshalProject, err)
 	}
 
-	url := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, projectsAPIPath, projectFieldsParam)
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, url, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, projectsAPIPath, projectFieldsParam)
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project request: %w", err)
 	}
@@ -161,9 +162,9 @@ func (c *Client) CreateProject(ctx context.Context, payload ProjectCreatePayload
 // Pass 0 for top and skip to use the default server-side pagination.
 func (c *Client) ListProjects(ctx context.Context, top, skip int) ([]Project, error) {
 	query := withPagination(projectFields, top, skip)
-	url := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, projectsAPIPath, query)
+	endpoint := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, projectsAPIPath, query)
 
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create list projects request: %w", err)
 	}
@@ -183,8 +184,8 @@ func (c *Client) ListProjects(ctx context.Context, top, skip int) ([]Project, er
 
 // GetProject reads a specific project by its entity ID.
 func (c *Client) GetProject(ctx context.Context, id string) (*Project, error) {
-	url := fmt.Sprintf(specificIssueLinkType, c.HostURL, projectsAPIPath, id, projectFieldsParam)
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, url, nil)
+	endpoint := fmt.Sprintf(resourceByIDWithFieldsFormat, c.HostURL, projectsAPIPath, url.PathEscape(id), projectFieldsParam)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get project request: %w", err)
 	}
@@ -209,8 +210,8 @@ func (c *Client) UpdateProject(ctx context.Context, id string, payload ProjectUp
 		return nil, fmt.Errorf(errMarshalProject, err)
 	}
 
-	url := fmt.Sprintf(specificIssueLinkType, c.HostURL, projectsAPIPath, id, projectFieldsParam)
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, url, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf(resourceByIDWithFieldsFormat, c.HostURL, projectsAPIPath, url.PathEscape(id), projectFieldsParam)
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update project request: %w", err)
 	}
@@ -230,8 +231,8 @@ func (c *Client) UpdateProject(ctx context.Context, id string, payload ProjectUp
 
 // DeleteProject deletes a specific project.
 func (c *Client) DeleteProject(ctx context.Context, id string) error {
-	url := fmt.Sprintf("%s/%s/%s", c.HostURL, projectsAPIPath, id)
-	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, url, nil)
+	endpoint := fmt.Sprintf("%s/%s/%s", c.HostURL, projectsAPIPath, url.PathEscape(id))
+	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create delete project request: %w", err)
 	}
@@ -246,8 +247,8 @@ func (c *Client) DeleteProject(ctx context.Context, id string) error {
 
 // GetProjectCustomFields returns all custom fields attached to a project.
 func (c *Client) GetProjectCustomFields(ctx context.Context, projectID string) ([]ProjectCustomField, error) {
-	url := fmt.Sprintf(projectCustomFieldsListFmt, c.HostURL, projectsAPIPath, projectID, projectCustomFieldsSubPath, projectCustomFieldFields)
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, url, nil)
+	endpoint := fmt.Sprintf(projectCustomFieldsListFmt, c.HostURL, projectsAPIPath, url.PathEscape(projectID), projectCustomFieldsSubPath, projectCustomFieldFields)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get project custom fields request: %w", err)
 	}
@@ -283,8 +284,8 @@ func (c *Client) GetProjectCustomFieldByName(ctx context.Context, projectID, fie
 
 // GetProjectCustomField reads a specific custom field attachment in a project.
 func (c *Client) GetProjectCustomField(ctx context.Context, projectID, fieldID string) (*ProjectCustomField, error) {
-	url := fmt.Sprintf(projectCustomFieldByIDFmt, c.HostURL, projectsAPIPath, projectID, projectCustomFieldsSubPath, fieldID, projectCustomFieldFields)
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, url, nil)
+	endpoint := fmt.Sprintf(projectCustomFieldByIDFmt, c.HostURL, projectsAPIPath, url.PathEscape(projectID), projectCustomFieldsSubPath, url.PathEscape(fieldID), projectCustomFieldFields)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get project custom field request: %w", err)
 	}
@@ -309,8 +310,8 @@ func (c *Client) AddProjectCustomField(ctx context.Context, projectID string, pa
 		return nil, fmt.Errorf(errMarshalProjectCustomField, err)
 	}
 
-	url := fmt.Sprintf(projectCustomFieldsListFmt, c.HostURL, projectsAPIPath, projectID, projectCustomFieldsSubPath, projectCustomFieldFields)
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, url, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf(projectCustomFieldsListFmt, c.HostURL, projectsAPIPath, url.PathEscape(projectID), projectCustomFieldsSubPath, projectCustomFieldFields)
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create add project custom field request: %w", err)
 	}
@@ -335,8 +336,8 @@ func (c *Client) UpdateProjectCustomField(ctx context.Context, projectID, fieldI
 		return nil, fmt.Errorf(errMarshalProjectCustomField, err)
 	}
 
-	url := fmt.Sprintf(projectCustomFieldByIDFmt, c.HostURL, projectsAPIPath, projectID, projectCustomFieldsSubPath, fieldID, projectCustomFieldFields)
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, url, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf(projectCustomFieldByIDFmt, c.HostURL, projectsAPIPath, url.PathEscape(projectID), projectCustomFieldsSubPath, url.PathEscape(fieldID), projectCustomFieldFields)
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update project custom field request: %w", err)
 	}
@@ -356,8 +357,8 @@ func (c *Client) UpdateProjectCustomField(ctx context.Context, projectID, fieldI
 
 // RemoveProjectCustomField removes a custom field attachment from a project.
 func (c *Client) RemoveProjectCustomField(ctx context.Context, projectID, fieldID string) error {
-	url := fmt.Sprintf("%s/%s/%s/%s/%s", c.HostURL, projectsAPIPath, projectID, projectCustomFieldsSubPath, fieldID)
-	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, url, nil)
+	endpoint := fmt.Sprintf("%s/%s/%s/%s/%s", c.HostURL, projectsAPIPath, url.PathEscape(projectID), projectCustomFieldsSubPath, url.PathEscape(fieldID))
+	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create remove project custom field request: %w", err)
 	}
@@ -372,8 +373,8 @@ func (c *Client) RemoveProjectCustomField(ctx context.Context, projectID, fieldI
 
 // GetProjectTimeTrackingSettings reads the time tracking settings for a project.
 func (c *Client) GetProjectTimeTrackingSettings(ctx context.Context, projectID string) (*ProjectTimeTrackingSettings, error) {
-	url := fmt.Sprintf(projectTimeTrackingFmt, c.HostURL, projectsAPIPath, projectID, projectTimeTrackingSubPath, projectTimeTrackingFields)
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, url, nil)
+	endpoint := fmt.Sprintf(projectTimeTrackingFmt, c.HostURL, projectsAPIPath, url.PathEscape(projectID), projectTimeTrackingSubPath, projectTimeTrackingFields)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get project time tracking settings request: %w", err)
 	}
@@ -398,8 +399,8 @@ func (c *Client) UpdateProjectTimeTrackingSettings(ctx context.Context, projectI
 		return nil, fmt.Errorf(errMarshalProjectTimeTracking, err)
 	}
 
-	url := fmt.Sprintf(projectTimeTrackingFmt, c.HostURL, projectsAPIPath, projectID, projectTimeTrackingSubPath, projectTimeTrackingFields)
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, url, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf(projectTimeTrackingFmt, c.HostURL, projectsAPIPath, url.PathEscape(projectID), projectTimeTrackingSubPath, projectTimeTrackingFields)
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update project time tracking settings request: %w", err)
 	}

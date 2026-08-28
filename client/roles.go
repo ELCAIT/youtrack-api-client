@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -20,7 +21,7 @@ const (
 	youtrackPermissionsFieldsParam = "fields=id,name,key"
 	permissionGraphFieldsParam     = "fields=id,name,key,impliedPermissions(id,name,key),dependentPermissions(id,name,key)"
 	specificYoutrackRole           = "%s/%s/%s?%s"
-	roleFields                     = "id,key,name,description,permissions(id,key,name)"
+	roleFields                     = "id,name,description,immutable,permissions(id,key,name)"
 	roleFieldsQueryParam           = "fields=" + roleFields
 	youtrackRolePermByIDAPIPath    = "%s/api/roles/%s/permissions/%s"
 
@@ -192,7 +193,7 @@ func roleName(role Role) string {
 
 // GetYoutrackRoleById returns a YouTrack role by ID.
 func (c *Client) GetYoutrackRoleById(ctx context.Context, roleId string) (*Role, error) {
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(specificYoutrackRole, c.HostURL, youtrackRolesAPIPath, roleId, roleFieldsQueryParam), nil)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(specificYoutrackRole, c.HostURL, youtrackRolesAPIPath, url.PathEscape(roleId), roleFieldsQueryParam), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get YouTrack role request: %w", err)
 	}
@@ -224,8 +225,8 @@ func (c *Client) CreateYoutrackRole(ctx context.Context, role Role) (*Role, erro
 		return nil, fmt.Errorf(errMarshalRole, err)
 	}
 
-	url := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, youtrackRolesAPIPath, roleFieldsQueryParam)
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, url, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf(pathWithFieldsFormat, c.HostURL, youtrackRolesAPIPath, roleFieldsQueryParam)
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create role request: %w", err)
 	}
@@ -257,8 +258,8 @@ func (c *Client) UpdateYoutrackRole(ctx context.Context, role Role) (*Role, erro
 		return nil, fmt.Errorf(errMarshalRole, err)
 	}
 
-	url := fmt.Sprintf(specificYoutrackRole, c.HostURL, youtrackRolesAPIPath, role.Id, roleFieldsQueryParam)
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, url, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf(specificYoutrackRole, c.HostURL, youtrackRolesAPIPath, role.Id, roleFieldsQueryParam)
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update role request: %w", err)
 	}
@@ -267,10 +268,18 @@ func (c *Client) UpdateYoutrackRole(ctx context.Context, role Role) (*Role, erro
 		return nil, fmt.Errorf("failed to update role: %w", err)
 	}
 
-	// Wait for the API to process the change (async processing)
-	waitForAsyncProcessing()
+	// The write is applied asynchronously, so read back until the reported
+	// role reflects it.
+	return readBackEqual(ctx,
+		func(ctx context.Context) (*Role, error) { return c.GetYoutrackRoleById(ctx, role.Id) },
+		func(r *Role) roleState {
+			if r == nil {
+				return roleState{}
+			}
 
-	return c.GetYoutrackRoleById(ctx, role.Id)
+			return roleState{Name: r.Name, Description: r.Description, Permissions: len(r.Permissions)}
+		},
+		roleState{Name: payload.Name, Description: payload.Description, Permissions: len(payload.Permissions)})
 }
 
 // DeleteYoutrackRole deletes a role via the YouTrack API.

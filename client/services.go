@@ -13,7 +13,7 @@ const (
 	servicesBasePath = "%s/%s/services"
 	serviceByIDPath  = "%s/%s/services/%s"
 	serviceFields    = "id,type,name,key,homeUrl,applicationName,description,vendor,version,trusted,consentRequired,secret,redirectUris,baseUrls," +
-		"clientCredentialsFlowEnabled,authCodeFlowEnabled,pkceRequired,implicitFlowEnabled,resourceOwnerFlowEnabled"
+		"clientCredentialsFlowEnabled,authCodeFlowEnabled,pkceRequired,implicitFlowEnabled,resourceOwnerFlowEnabled,immutable"
 	serviceFieldsQueryParam = "fields=" + serviceFields
 )
 
@@ -105,10 +105,18 @@ func (c *Client) UpdateService(ctx context.Context, serviceID string, service Se
 		return nil, fmt.Errorf("failed to update service: %w", err)
 	}
 
-	// Wait for the API to process the change (async processing)
-	waitForAsyncProcessing()
+	// Hub applies the write asynchronously, so read back until the reported
+	// service reflects it.
+	return readBackEqual(ctx,
+		func(ctx context.Context) (*Service, error) { return c.GetServiceByID(ctx, serviceID) },
+		func(s *Service) serviceState {
+			if s == nil {
+				return serviceState{}
+			}
 
-	return c.GetServiceByID(ctx, serviceID)
+			return serviceState{Name: s.Name, HomeURL: s.HomeURL, Description: s.Description}
+		},
+		serviceState{Name: service.Name, HomeURL: service.HomeURL, Description: service.Description})
 }
 
 // DeleteService deletes a Hub service by ID.

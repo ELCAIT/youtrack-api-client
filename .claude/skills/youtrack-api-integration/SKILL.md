@@ -81,10 +81,11 @@ when YouTrack also exposes it under `/api/...`.
   methods rather than reimplementing query building.
 - **Some writes are asynchronously applied.** A handful of YouTrack
   operations return 2xx before the change is fully visible on a subsequent
-  GET. `waitForAsyncProcessing()` exists for these; only add a new call site
-  if you've confirmed (via integration testing or docs) that the specific
-  operation actually has this behavior — don't add it speculatively to "be
-  safe", since it just adds latency everywhere else.
+  GET. Handle these with the `readBack*` helpers in `async.go`, which poll the
+  read-back until the server reports the written value, bounded by the poll
+  budget and by the caller's context (see `youtrack-go-conventions` for the
+  projection pattern). Only add one if you've confirmed the operation actually
+  behaves this way — don't add it speculatively. Never use `time.Sleep`.
 - **List responses aren't always a bare array.** Some endpoints return a bare
   JSON array, others wrap it (`{"users": [...]}`, `{"usergroups": [...]}`)
   depending on YouTrack version/config. `ListUsers`/`GetUserByLogin` handle
@@ -93,6 +94,16 @@ when YouTrack also exposes it under `/api/...`.
   discover behaves inconsistently across instances, but don't add it
   defensively where the response shape is actually stable — check real
   responses (via the docs' example payloads, or integration tests) first.
+
+## Checking the models against YouTrack's own OpenAPI spec
+
+Every instance publishes a generated OpenAPI 3.0 document at
+`/api/openapi.json`. It is the fastest way to get a resource's real field list
+before writing a struct, and to catch fields that drifted after a version bump.
+It is also wrong in both directions often enough that every finding needs
+confirming against a live instance. Use the `youtrack-openapi-drift` skill,
+which has the script and the catalogue of known false positives — do not
+generate code from the spec.
 
 ## Verifying against a real instance
 
@@ -106,17 +117,59 @@ membership fallback chains grew over time, per `CHANGELOG.md` 1.1.3–1.1.5).
 
 ## Workflow checklist for adding a new resource
 
-1. Identify the owning API (YouTrack vs Hub) and fetch its reference page.
-2. Note the path, verb(s), required/optional fields, and whether list
-   endpoints support `$top`/`$skip`.
-3. Add a new `client/<resource>.go` (or extend an existing domain file if the
+The order matters: **the spec is the draft, the live instance is the
+authority.** Write the struct from the spec, then correct it against a real
+response before committing. Skipping the second step is how a field that the
+spec omits (or that the server never returns) ends up silently broken — see
+`youtrack-openapi-drift` for the confirmed cases.
+
+1. Identify the owning API (YouTrack vs Hub) and fetch its reference page for
+   the prose: semantics, permissions, and quirks the schema cannot express.
+2. **Draft from the spec.** Pull the owning API's OpenAPI document and read the
+   resource's schema for the field list, types, and nullability:
+
+   ```bash
+   curl -s -H "Authorization: Bearer $YOUTRACK_TOKEN" \
+     "$YOUTRACK_BASE_URL/api/openapi.json" -o /tmp/openapi.json          # YouTrack
+   curl -s -H "Authorization: Bearer $YOUTRACK_TOKEN" \
+     "$YOUTRACK_BASE_URL/hub/api/rest/openapi.json" -o /tmp/hub-openapi.json  # Hub
+   ```
+
+   Note the path, verb(s), required/optional fields, and whether list endpoints
+   support `$top`/`$skip`. Treat every field as provisional.
+3. **Correct against a live instance before writing the final struct.** Request
+   the drafted field list and compare what comes back:
+   - A field that comes back absent may not exist. Confirm with the control
+     query (ask for a deliberately bogus name too — if both responses are
+     identical, the server is silently dropping unknown names, so absence
+     proves nothing on its own).
+   - A field the spec omits may still be real; check the raw response for keys
+     the schema never mentioned.
+   - A field may be present but always `null`, empty, or a 500 — not worth
+     modelling.
+   - For a writable field, round-trip it: write, read back, confirm it stuck.
+     Delete anything you create.
+4. Add a new `client/<resource>.go` (or extend an existing domain file if the
    resource is a sub-resource, e.g. project custom fields live in
    `project.go`) with the const block, model/payload structs, and CRUD
-   methods per `youtrack-go-conventions`.
-4. Write table-driven unit tests in `client/<resource>_test.go` using
-   `newTestClient`/`encodeJSON` from `roles_test.go`.
-5. If the resource is identity-related, check whether it needs the
+   methods per `youtrack-go-conventions`. Model what step 3 confirmed, not what
+   step 2 promised, and record any divergence in a comment on the field — that
+   comment is the evidence the next session needs.
+5. **Add the field list to the `xFields` constant.** A field absent from
+   `fields=` never populates regardless of the struct. This is the single
+   easiest step to forget.
+6. Write table-driven unit tests in `client/<resource>_test.go` using
+   `newTestClient`/`encodeJSON` from `roles_test.go`, with fixtures copied from
+   the **real responses captured in step 3**, not from the spec's examples.
+7. If the resource is identity-related, check whether it needs the
    Hub/YouTrack fallback pattern or a successor-on-delete parameter.
-6. Update `CHANGELOG.md` and, if it's a headline feature, `README.md`.
-7. Run `go vet ./...`, `golangci-lint run --config .golangci.yml`, and
-   `go test ./client/...`.
+8. Run the drift check for the owning spec to confirm the new struct pairs
+   cleanly, and add any confirmed divergence to the suppression lists in
+   `youtrack-openapi-drift/scripts/drift.py` so it does not resurface as noise.
+9. Update `CHANGELOG.md` and, if it's a headline feature, `README.md`.
+10. Run `go vet ./...`, `golangci-lint run --config .golangci.yml`, and
+    `go test ./client/...`.
+
+If no live instance is reachable, stop after step 2, write the struct from the
+spec, and **say explicitly that it is unverified** — do not present a
+spec-derived model as confirmed.

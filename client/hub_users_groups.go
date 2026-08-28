@@ -82,7 +82,7 @@ func (c *Client) UpdateUser(ctx context.Context, userID string, user User) (*Use
 		return nil, fmt.Errorf("failed to marshal update user payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, fmt.Sprintf(hubSpecificUserPath, c.HostURL, youtrackUsersAPIPath, userID, hubUserLifecycleFields), bytes.NewReader(rb))
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, fmt.Sprintf(hubSpecificUserPath, c.HostURL, youtrackUsersAPIPath, url.PathEscape(userID), hubUserLifecycleFields), bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update user request: %w", err)
 	}
@@ -117,7 +117,7 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 		return fmt.Errorf("failed to resolve delete user successor: %w", err)
 	}
 
-	endpoint := fmt.Sprintf(hubAllUsersNoFields+"/%s?successor=%s", c.HostURL, youtrackUsersAPIPath, userID, url.QueryEscape(guest.Id))
+	endpoint := fmt.Sprintf(hubAllUsersNoFields+"/%s?successor=%s", c.HostURL, youtrackUsersAPIPath, url.PathEscape(userID), url.QueryEscape(guest.Id))
 	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create delete user request: %w", err)
@@ -158,83 +158,83 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 		// Canonical Hub usergroup membership endpoints (preferred).
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUsersNoFields, c.HostURL, hubUserGroupsAPIPath, groupID),
+			endpoint: fmt.Sprintf(hubGroupUsersNoFields, c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID)),
 			body:     userRB,
 		},
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUsersNoFields, c.HostURL, hubRestUserGroupsAPIPath, groupID),
+			endpoint: fmt.Sprintf(hubGroupUsersNoFields, c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID)),
 			body:     userRB,
 		},
 		{
 			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 		},
 		{
 			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 		},
 		// Compatibility variants with explicit fields query.
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, hubUserLifecycleFields),
+			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID), hubUserLifecycleFields),
 			body:     userRB,
 		},
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, hubUserLifecycleFields),
+			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID), hubUserLifecycleFields),
 			body:     userRB,
 		},
 		// Legacy/compatibility endpoints for older setups.
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, hubUserLifecycleFields),
+			endpoint: fmt.Sprintf(hubGroupUsersPathFormat, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), hubUserLifecycleFields),
 			body:     userRB,
 		},
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 			body:     userRB,
 		},
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 			body:     userRB,
 		},
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 			body:     userRB,
 		},
 		{
 			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 		},
 		{
 			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 		},
 		{
 			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
+			endpoint: fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 		},
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, userID, groupID),
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, url.PathEscape(userID), url.PathEscape(groupID)),
 			body:     groupRB,
 		},
 		{
 			method:   httpMethodPost,
-			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, userID, groupID),
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, url.PathEscape(userID), url.PathEscape(groupID)),
 			body:     groupRB,
 		},
 		{
 			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, userID, groupID),
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, url.PathEscape(userID), url.PathEscape(groupID)),
 		},
 		{
 			method:   http.MethodPut,
-			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, userID, groupID),
+			endpoint: fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, url.PathEscape(userID), url.PathEscape(groupID)),
 		},
 	}
 
@@ -257,11 +257,11 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 // RemoveUserFromGroup removes a user from a group using Hub usergroups endpoints.
 func (c *Client) RemoveUserFromGroup(ctx context.Context, groupID, userID string) error {
 	attempts := []string{
-		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, groupID, userID),
-		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, groupID, userID),
-		fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, userID, groupID),
-		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, groupID, userID),
-		fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, userID, groupID),
+		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
+		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
+		fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, youtrackUsersAPIPath, url.PathEscape(userID), url.PathEscape(groupID)),
+		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
+		fmt.Sprintf(hubUserGroupPathFormat, c.HostURL, hubRestUsersAPIPath, url.PathEscape(userID), url.PathEscape(groupID)),
 	}
 
 	for _, endpoint := range attempts {

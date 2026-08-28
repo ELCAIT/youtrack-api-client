@@ -83,9 +83,13 @@ func (c *Client) UpdateWorkTimeSettings(ctx context.Context, settings WorkTimeSe
 		return WorkTimeSettings{}, fmt.Errorf("failed to update work time settings: %w", err)
 	}
 
-	waitForAsyncProcessing()
-
-	return c.GetWorkTimeSettings(ctx)
+	// The write is applied asynchronously, so read back until the reported
+	// schedule matches the one that was just set.
+	return readBackDeepEqual(ctx, c.GetWorkTimeSettings,
+		func(s WorkTimeSettings) workTimeState {
+			return workTimeState{MinutesADay: s.MinutesADay, WorkDays: s.WorkDays}
+		},
+		workTimeState{MinutesADay: settings.MinutesADay, WorkDays: settings.WorkDays})
 }
 
 // ListWorkItemTypes returns all global work item types.

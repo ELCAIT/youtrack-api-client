@@ -51,9 +51,11 @@ func (c *Client) UpdateRestSettings(ctx context.Context, restSettings RestSettin
 		return RestSettings{}, fmt.Errorf("failed to update REST settings: %w", err)
 	}
 
-	// Wait for the API to process the change (async processing)
-	waitForAsyncProcessing()
-
-	// Read back the updated settings to get the actual current state
-	return c.GetRestSettings(ctx)
+	// The write is applied asynchronously, so read back until the reported
+	// origins match the ones that were just set.
+	return readBackDeepEqual(ctx, c.GetRestSettings,
+		func(s RestSettings) restSettingsState {
+			return restSettingsState{AllowAllOrigins: s.AllowAllOrigins, AllowedOrigins: s.AllowedOrigins}
+		},
+		restSettingsState{AllowAllOrigins: restSettings.AllowAllOrigins, AllowedOrigins: restSettings.AllowedOrigins})
 }

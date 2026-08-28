@@ -47,6 +47,85 @@ func main() {
 }
 ```
 
+## Configuring the client
+
+`NewClient` validates the host and token up front and accepts options, so a
+client shared between goroutines is configured once and never mutated
+afterwards:
+
+```go
+client, err := youtrack.NewClient(host, token,
+	youtrack.WithUserAgent("my-operator/1.0.0"),   // identify your traffic in YouTrack's logs
+	youtrack.WithTimeout(30*time.Second),          // per-request timeout
+	youtrack.WithHTTPClient(customHTTPClient),     // custom transport, private CA, proxy
+	youtrack.WithLogger(logger),                   // one *slog* line per request
+)
+```
+
+A trailing slash on the host is accepted and normalised away, and a host that
+is empty, relative, or not `http(s)` is rejected at construction rather than on
+the first request.
+
+## Error handling
+
+Every call returns a typed `*HTTPError` for a server response, or a wrapped
+transport error. Classify it with the predicates rather than by comparing
+status codes — they see through `fmt.Errorf` wrapping:
+
+| Predicate | Meaning |
+| --- | --- |
+| `IsNotFound(err)` | The entity does not exist. Prefer this over `IsNotFoundError`: it also covers collection lookups that found no match. |
+| `IsAlreadyExists(err)` | A create collided with an entity that is already there. |
+| `IsConflict(err)` | The write collided with the entity's current state; re-read and retry. |
+| `IsUnauthorized(err)` / `IsForbidden(err)` | The token is invalid, or lacks a permission. Retrying will not help. |
+| `IsRateLimited(err)` | The server applied a rate limit. |
+| `IsRetryable(err)` | The failure may clear on its own: 429, 5xx, or a transport error. |
+| `RetryAfter(err)` | The delay the server asked for, when it sent one. |
+
+`HTTPError` carries YouTrack's own error payload (`ErrorCode`,
+`ErrorDescription`) alongside the status code and raw body, which usually
+explains a failure better than the status alone.
+
+## Using this client from a Kubernetes operator
+
+The distinction between *absent* and *unknown* is the one that matters. A
+transport error read as absence makes a controller create duplicates, or
+converge toward deleting live data:
+
+```go
+project, err := client.GetProject(ctx, id)
+switch {
+case err == nil:
+	// Exists: converge its fields toward the desired state.
+case youtrack.IsNotFound(err):
+	// Absent: create it.
+case youtrack.IsRetryable(err):
+	// Unknown: requeue, changing nothing.
+	if delay, ok := youtrack.RetryAfter(err); ok {
+		return ctrl.Result{RequeueAfter: delay}, nil
+	}
+	return ctrl.Result{}, err
+default:
+	// Terminal: the request itself is wrong. Report it on the resource status
+	// rather than retrying it forever.
+	return ctrl.Result{}, reconcile.TerminalError(err)
+}
+```
+
+Two further notes for controllers:
+
+- **Reconcile against the whole collection.** Use the `ListAll*` methods
+  (`ListAllProjects`, `ListAllUsers`, `ListAllGroups`, `ListAllYoutrackRoles`,
+  `ListAllAssignedRoles`, `ListAllServices`, `ListAllApps`) rather than a single
+  paginated `List*` call. Acting on only the first page makes a controller
+  converge toward deleting everything it could not see.
+- **Writes never block on a fixed sleep.** Several YouTrack settings endpoints
+  acknowledge a write before applying it, so the matching `Update*` methods poll
+  the read-back until it reflects the write, bounded by an internal timeout
+  *and* by your context. They return as soon as the value converges and abort
+  promptly on cancellation, so they neither stall a worker goroutine nor delay
+  manager shutdown.
+
 ## Apps (undocumented API)
 
 Apps can be enabled or disabled per project, or enabled for every project at once:

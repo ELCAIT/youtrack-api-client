@@ -160,7 +160,7 @@ func (c *Client) CreateGroup(ctx context.Context, group NestedGroup) (*NestedGro
 
 // GetGroupByID returns a YouTrack group by ID.
 func (c *Client) GetGroupByID(ctx context.Context, groupID string) (*NestedGroup, error) {
-	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(specificYoutrackGroup, c.HostURL, youtrackGroupsAPIPath, groupID, nestedGroupFields), nil)
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(specificYoutrackGroup, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), nestedGroupFields), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get group request: %w", err)
 	}
@@ -185,7 +185,7 @@ func (c *Client) UpdateGroup(ctx context.Context, groupID string, group NestedGr
 		return nil, fmt.Errorf("failed to marshal update group payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, fmt.Sprintf(specificYoutrackGroup, c.HostURL, youtrackGroupsAPIPath, groupID, nestedGroupFields), bytes.NewReader(rb))
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, fmt.Sprintf(specificYoutrackGroup, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), nestedGroupFields), bytes.NewReader(rb))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create update group request: %w", err)
 	}
@@ -243,9 +243,9 @@ func (c *Client) GetAllUsersGroup(ctx context.Context) (*NestedGroup, error) {
 // requires this parameter.
 func (c *Client) DeleteGroup(ctx context.Context, groupID, successorID string) error {
 	attempts := []string{
-		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, hubRestUserGroupsAPIPath, groupID, url.QueryEscape(successorID)),
-		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, hubUserGroupsAPIPath, groupID, url.QueryEscape(successorID)),
-		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, youtrackGroupsAPIPath, groupID, url.QueryEscape(successorID)),
+		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID), url.QueryEscape(successorID)),
+		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID), url.QueryEscape(successorID)),
+		fmt.Sprintf("%s/%s/%s?successor=%s", c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), url.QueryEscape(successorID)),
 	}
 
 	var lastErr error

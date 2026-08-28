@@ -50,6 +50,14 @@ type Service struct {
 	ImplicitFlowEnabled          bool     `json:"implicitFlowEnabled"`
 	ResourceOwnerFlowEnabled     bool     `json:"resourceOwnerFlowEnabled"`
 	Secret                       string   `json:"secret,omitempty"` //nolint:gosec // G117: field name reflects the Hub service credential term, not a hardcoded secret
+
+	// Immutable reports whether the service is built into Hub and therefore
+	// cannot be modified or deleted. A reconciling caller should check it
+	// before attempting an update: on a stock instance the bundled services
+	// ("YouTrack", "YouTrack Administration", "YouTrack Mobile", "Konnector")
+	// all report true, and writes to them fail. It is read-only and is never
+	// sent on a create or update, so it keeps `omitempty`.
+	Immutable bool `json:"immutable,omitempty"`
 }
 
 // ServicesResponse wraps the paginated Hub services list response.

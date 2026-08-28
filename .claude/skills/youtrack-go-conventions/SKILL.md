@@ -86,6 +86,11 @@ a list endpoint supports `$top`/`$skip`), `UpdateX`, `DeleteX`. Read methods
 return `(*X, error)`; list methods return `([]X, error)`; delete methods
 return `error` only.
 
+When you add a `ListX(ctx, top, skip)`, also add a `ListAllX(ctx)` beside the
+others in `pagination.go` — one line delegating to the generic `listAll`
+helper. Reconciling callers need the whole collection: acting on only the first
+page makes a controller converge toward deleting everything it could not see.
+
 ### Recurring quirks to preserve, not "fix"
 
 - **`fields` is mandatory.** YouTrack/Hub only return the fields you ask for.
@@ -122,11 +127,18 @@ return `error` only.
   delete as success (`IsNotFoundError(err)` → `return nil`). Preserve this for
   any new delete/remove method — callers should be able to call delete twice
   safely.
-- **Async settle delay.** `waitForAsyncProcessing()` in `client.go` is a
-  fixed-delay workaround for YouTrack operations that process updates
-  asynchronously after returning 2xx. Reuse it rather than inventing a new
-  sleep/poll loop, and only add it where an existing YouTrack quirk actually
-  requires it (don't sprinkle it defensively).
+- **Async read-back, never a sleep.** Some YouTrack/Hub writes return 2xx
+  before the change is visible to a subsequent GET. Handle this with
+  `readBackEqual` / `readBackDeepEqual` / `readBackAfterWrite` (`async.go`),
+  which re-read until the server reports the value that was written, bounded
+  by `asyncPollTimeout` *and* by the caller's context. Project the entity down
+  to the fields the write actually controls — see the `*State` types in
+  `async_state.go` — so server-populated fields (IDs, secrets Hub never echoes
+  back, computed state) don't prevent it from ever settling. Never add a
+  `time.Sleep`: the old `waitForAsyncProcessing()` blocked every caller for a
+  fixed delay and ignored cancellation, which stalls an operator's worker
+  goroutines and delays manager shutdown. Only use a read-back where the
+  endpoint genuinely behaves this way; don't add it defensively.
 - **Case-insensitive / lookup-by-name.** When an API only supports listing,
   not filtering by name/login, filter client-side after listing
   (`GetUserByLogin`, `GetUserGroupByName` use `strings.EqualFold` for names).
@@ -159,6 +171,12 @@ one, since there's no lint failure to fall back on).
   explicitly ("IMPORTANT: do not duplicate string literals") and matches
   existing code: every URL path, format string, and field list in `client/`
   is a named constant, never an inline literal repeated across methods.
+- **Escape every ID interpolated into a path.** Identifiers reaching this
+  client often come from user-authored configuration (a Kubernetes resource
+  spec, Terraform HCL), so one containing `/`, `?`, or `#` must not be able to
+  address a different endpoint. Use `c.buildURL` (`url.go`), which escapes
+  segments and normalises separators, or `url.PathEscape` when extending an
+  existing `fmt.Sprintf` site.
 - **No duplicated logic.** "Do not duplicate code" / "Use helper functions
   where appropriate" — if you're about to write the same request-build/
   marshal/unmarshal sequence a second time (e.g. a second lookup-by-field
