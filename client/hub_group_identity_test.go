@@ -175,6 +175,11 @@ func TestSetGroupIdentity(t *testing.T) {
 			if sent.IDPGroupName != testHubGroupName {
 				t.Fatalf("unexpected idp group name: %s", sent.IDPGroupName)
 			}
+			// Without the module the group is tagged for no provider, and its id
+			// cannot be told from another directory's.
+			if sent.MappedInAuthModule == nil || sent.MappedInAuthModule.ID != testAuthModuleID {
+				t.Fatalf("payload does not carry the auth module: %+v", sent.MappedInAuthModule)
+			}
 			// The write must not carry a name or description: those belong to the
 			// YouTrack-side create, and resending them here would let this call
 			// overwrite them with empty values.
@@ -200,7 +205,7 @@ func TestSetGroupIdentity(t *testing.T) {
 	})
 	defer server.Close()
 
-	group, err := client.SetGroupIdentity(context.Background(), testHubGroupID, testIDPGroupID, testHubGroupName)
+	group, err := client.SetGroupIdentity(context.Background(), testHubGroupID, testAuthModuleID, testIDPGroupID, testHubGroupName)
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
@@ -216,9 +221,10 @@ func TestSetGroupIdentity(t *testing.T) {
 func TestSetGroupIdentityRejectsIncompleteArguments(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct{ groupID, idpGroupID string }{
-		"missing group id":     {"", testIDPGroupID},
-		"missing idp group id": {testHubGroupID, "  "},
+	tests := map[string]struct{ groupID, authModuleID, idpGroupID string }{
+		"missing group id":       {"", testAuthModuleID, testIDPGroupID},
+		"missing auth module id": {testHubGroupID, " ", testIDPGroupID},
+		"missing idp group id":   {testHubGroupID, testAuthModuleID, "  "},
 	}
 
 	for name, test := range tests {
@@ -230,7 +236,7 @@ func TestSetGroupIdentityRejectsIncompleteArguments(t *testing.T) {
 			})
 			defer server.Close()
 
-			if _, err := client.SetGroupIdentity(context.Background(), test.groupID, test.idpGroupID, testHubGroupName); err == nil {
+			if _, err := client.SetGroupIdentity(context.Background(), test.groupID, test.authModuleID, test.idpGroupID, testHubGroupName); err == nil {
 				t.Fatal(errExpectedError)
 			}
 		})
@@ -304,5 +310,40 @@ func TestFindGroupByIDPGroupIDWithoutModuleMatchesAnyProvider(t *testing.T) {
 	}
 	if group == nil {
 		t.Fatal("expected a match when no module is given")
+	}
+}
+
+// Hub answers a request for an id it does not know with 200 and some other group's
+// record rather than a 404 -- observed live, where a deleted group's id returned an
+// unrelated group. Trusting that would read and then write the wrong group.
+func TestGetHubGroupRejectsAMismatchedGroup(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		encodeJSON(t, w, HubGroup{ID: "some-other-group", Name: "helpdesk-agents"})
+	})
+	defer server.Close()
+
+	if _, err := client.GetHubGroup(context.Background(), testHubGroupID); !IsNotFound(err) {
+		t.Fatalf("expected a not-found error for a mismatched group, got %v", err)
+	}
+}
+
+// SetGroupIdentity reads the group back, so the same substitution must not let a write
+// report success against a group that is not the one addressed.
+func TestSetGroupIdentityRejectsAMismatchedReadBack(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		encodeJSON(t, w, HubGroup{ID: "some-other-group", Name: "helpdesk-agents"})
+	})
+	defer server.Close()
+
+	if _, err := client.SetGroupIdentity(context.Background(), testHubGroupID, testAuthModuleID, testIDPGroupID, testHubGroupName); !IsNotFound(err) {
+		t.Fatalf("expected a not-found error for a mismatched read-back, got %v", err)
 	}
 }

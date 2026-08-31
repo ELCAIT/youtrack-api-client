@@ -23,8 +23,25 @@ FEATURES:
   against Hub, which answers it with `200` and an empty body, so `SetGroupIdentity` reads
   the group back rather than parsing the response.
 
+  `SetGroupIdentity` takes the auth module id as well, because writing `idpGroupId`
+  alone leaves the group associated with no module at all: unlike a user detail, which
+  belongs to the module that created it, a group's association is a field of its own that
+  Hub does not infer. Verified live — a group tagged without it was invisible to a
+  module-filtered lookup, so a redelivered role event re-tagged instead of settling and a
+  renamed role created a second group.
+
   Hub cannot filter on the attribute either — `idpGroupId` is not one of the fields its
   group query understands — so `FindGroupByIDPGroupID` scans the listing.
+
+  `GetHubGroup` rejects a response whose id is not the one requested. Hub answers a
+  request for an id it does not know with `200` and **some other group's record** rather
+  than a `404`: on a live instance a deleted group's id returned an unrelated group, so a
+  caller that trusted the status would read and then write the wrong group.
+
+  Note for callers that delete groups: deletion goes through the **YouTrack** endpoint
+  (`DeleteGroup`, which needs a real successor group id), never Hub's `usergroups`. A
+  group lives on both sides, and removing only the Hub record leaves the YouTrack row
+  behind in a state neither API will then delete.
 
 - Add support for Hub **user details**, the per-user authentication identities that record who an account is at each external identity provider. This is what lets a caller reconcile an upstream directory's events against YouTrack accounts by the upstream's own user id:
   - `ListAuthModules(ctx)` and `GetAuthModuleByName(ctx, name)` enumerate and resolve the configured authentication modules. The name is what an operator recognises but it is instance-specific and renameable, so a caller should resolve it to an id once at startup and fail loudly if it is missing, rather than silently provisioning nothing on every later call.

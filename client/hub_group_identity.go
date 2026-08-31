@@ -135,15 +135,22 @@ func (c *Client) FindGroupByIDPGroupID(ctx context.Context, authModuleName, idpG
 }
 
 // GetHubGroup returns one Hub group with its identity attributes.
+//
+// An id Hub does not know is reported as not found rather than trusted: Hub answers such
+// a request with 200 and some other group's record instead of a 404 -- observed on a
+// live instance, where a deleted group's id returned an unrelated group. A caller that
+// took that at face value would read and then write the wrong group, so the id of what
+// came back is checked against the id that was asked for.
 func (c *Client) GetHubGroup(ctx context.Context, groupID string) (*HubGroup, error) {
-	if strings.TrimSpace(groupID) == "" {
+	wanted := strings.TrimSpace(groupID)
+	if wanted == "" {
 		return nil, fmt.Errorf("group id must not be empty")
 	}
 
 	values := url.Values{}
 	values.Set("fields", hubGroupIdentityFields)
 
-	endpoint := fmt.Sprintf("%s/%s/%s?%s", c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(groupID), values.Encode())
+	endpoint := fmt.Sprintf("%s/%s/%s?%s", c.HostURL, hubRestUserGroupsAPIPath, url.PathEscape(wanted), values.Encode())
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create get hub group request: %w", err)
@@ -159,27 +166,46 @@ func (c *Client) GetHubGroup(ctx context.Context, groupID string) (*HubGroup, er
 		return nil, fmt.Errorf("failed to unmarshal hub group: %w", err)
 	}
 
+	if !strings.EqualFold(strings.TrimSpace(group.ID), wanted) {
+		return nil, notFoundf("hub group with id %q (the server answered with group %q)", wanted, group.ID)
+	}
+
 	return &group, nil
 }
 
-// SetGroupIdentity records the identity provider's group id and name on a Hub group.
+// SetGroupIdentity records the identity provider's group id and name on a Hub group,
+// and associates the group with the module that provider authenticates through.
 //
 // groupID must be the group's Hub id, which YouTrack reports as the group's ring id.
 // The YouTrack group API silently drops idpGroupId from a create or update payload --
 // it neither stores nor returns the field -- so tagging a group created through
 // CreateGroup takes this second call against Hub.
 //
+// authModuleID is required because writing idpGroupId alone leaves the group associated
+// with no module at all: unlike a user detail, which belongs to the module that created
+// it, a group's association is a field of its own that Hub does not infer. A group
+// tagged without it carries an id that cannot be attributed to any provider, and since
+// every provider writes into the same idpGroupId field, such a group is
+// indistinguishable from one tagged by a different directory.
+//
 // Hub answers this write with 200 and an empty body, so the result is read back rather
 // than parsed from the response.
-func (c *Client) SetGroupIdentity(ctx context.Context, groupID, idpGroupID, idpGroupName string) (*HubGroup, error) {
+func (c *Client) SetGroupIdentity(ctx context.Context, groupID, authModuleID, idpGroupID, idpGroupName string) (*HubGroup, error) {
 	if strings.TrimSpace(groupID) == "" {
 		return nil, fmt.Errorf("group id must not be empty")
+	}
+	if strings.TrimSpace(authModuleID) == "" {
+		return nil, fmt.Errorf("auth module id must not be empty")
 	}
 	if strings.TrimSpace(idpGroupID) == "" {
 		return nil, fmt.Errorf("idp group id must not be empty")
 	}
 
-	payload := HubGroup{IDPGroupID: idpGroupID, IDPGroupName: idpGroupName}
+	payload := HubGroup{
+		IDPGroupID:         idpGroupID,
+		IDPGroupName:       idpGroupName,
+		MappedInAuthModule: &AuthModule{ID: authModuleID},
+	}
 	rb, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal group identity payload: %w", err)
