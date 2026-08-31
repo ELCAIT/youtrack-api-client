@@ -1,5 +1,31 @@
 ## Unreleased
 FEATURES:
+- Add support for a Hub group's **identity-provider attributes**, so a group can be
+  reconciled by the id of the role it represents at an upstream directory:
+  - `FindGroupByIDPGroupID(ctx, authModuleName, idpGroupID)` returns the group carrying
+    that id, or `nil, nil` when none does. Every provider writes into the same
+    `idpGroupId` field, so the module name restricts the match to one provider's groups;
+    passing an empty name matches on the id alone, which is only safe on an instance
+    where a single provider tags groups.
+  - `SetGroupIdentity(ctx, groupID, idpGroupID, idpGroupName)` records the attributes on
+    an existing group. `groupID` is the group's Hub id, which YouTrack reports as its
+    ring id.
+  - `ListHubGroups(ctx, top, skip)` and `GetHubGroup(ctx, groupID)` read groups with
+    those attributes, which the YouTrack-side group calls do not return.
+  - `HubGroup` models the wire shape, and `HubGroup.AuthModuleName()` reports the
+    provider a tagged group belongs to (Hub sets either `importedFromAuthModule` or
+    `mappedInAuthModule` depending on how the association was made, so both are read).
+
+  `idpGroupId` is a Hub-only field: the YouTrack group API neither returns it nor stores
+  it, and **silently drops it** from a create or update payload rather than rejecting the
+  request — verified against a live instance, where a group created through `CreateGroup`
+  with the field set came back without it. Tagging a group therefore takes a second call
+  against Hub, which answers it with `200` and an empty body, so `SetGroupIdentity` reads
+  the group back rather than parsing the response.
+
+  Hub cannot filter on the attribute either — `idpGroupId` is not one of the fields its
+  group query understands — so `FindGroupByIDPGroupID` scans the listing.
+
 - Add support for Hub **user details**, the per-user authentication identities that record who an account is at each external identity provider. This is what lets a caller reconcile an upstream directory's events against YouTrack accounts by the upstream's own user id:
   - `ListAuthModules(ctx)` and `GetAuthModuleByName(ctx, name)` enumerate and resolve the configured authentication modules. The name is what an operator recognises but it is instance-specific and renameable, so a caller should resolve it to an id once at startup and fail loudly if it is missing, rather than silently provisioning nothing on every later call.
   - `FindUserByAuthIdentifier(ctx, authModuleName, identifier)` returns the Hub user whose detail for that module carries the identifier, or `nil, nil` when no user matches. Absence is not an error: an event naming an account the instance does not have is a normal outcome, and a caller distinguishes it from a failure by the nil user.
