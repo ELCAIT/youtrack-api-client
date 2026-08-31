@@ -1,3 +1,15 @@
+## Unreleased
+FEATURES:
+- Add support for Hub **user details**, the per-user authentication identities that record who an account is at each external identity provider. This is what lets a caller reconcile an upstream directory's events against YouTrack accounts by the upstream's own user id:
+  - `ListAuthModules(ctx)` and `GetAuthModuleByName(ctx, name)` enumerate and resolve the configured authentication modules. The name is what an operator recognises but it is instance-specific and renameable, so a caller should resolve it to an id once at startup and fail loudly if it is missing, rather than silently provisioning nothing on every later call.
+  - `FindUserByAuthIdentifier(ctx, authModuleName, identifier)` returns the Hub user whose detail for that module carries the identifier, or `nil, nil` when no user matches. Absence is not an error: an event naming an account the instance does not have is a normal outcome, and a caller distinguishes it from a failure by the nil user.
+  - `AddUserDetail(ctx, userID, detail)`, `ListUserDetails(ctx, userID)`, and `RemoveUserDetail(ctx, userID, detailID)` manage the details on one user. `RemoveUserDetail` treats an already-absent detail as success, like the other `Remove`/`Delete` methods in the client.
+  - `UserDetail`, `AuthModule`, and `HubUser` model the wire shapes, and `Oauth2DetailsType` is the discriminator Hub uses for details produced by an OAuth2 or OIDC module. `HubUser` is deliberately a different projection from `User`: the authentication details live on the Hub side of the API, so a lookup by external identity returns the Hub shape.
+
+  `AddUserDetail` is the part that does not merely read what Hub already knows. Hub writes a detail on first login, so an account provisioned from an upstream directory but never logged into carries no external identity at all and cannot be found by its upstream id — for a customer-facing instance that is the majority of accounts. Writing the detail at creation closes that gap, and when the user does eventually log in Hub matches them onto the existing detail instead of provisioning a second account.
+
+  `FindUserByAuthIdentifier` narrows the listing to one module (`query=authModule: {name}`) and matches the identifier client-side, because Hub's user query understands the module but not the detail's identifier: the documented `authLogin` query field matches only a Hub-local login, and `identifier` is not a query field at all. The scan is therefore bounded by one module's population rather than by the whole user base — on the instance this was verified against, 4 users versus 1881 for the largest module. The module is checked alongside the identifier when matching, because a user has one detail per module and their identifiers are unrelated namespaces: matching on the value alone could pick up an unrelated provider's id.
+
 ## 1.5.0
 FEATURES:
 - Add an error taxonomy so callers can decide what to do with a failure without comparing status codes. All predicates unwrap, so they work on an error that has been wrapped with `fmt.Errorf`:
