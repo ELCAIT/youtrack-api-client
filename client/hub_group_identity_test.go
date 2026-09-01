@@ -150,6 +150,39 @@ func TestFindGroupByIDPGroupIDEmpty(t *testing.T) {
 
 // --- SetGroupIdentity ---
 
+// assertGroupIdentityPayload checks the body of the identity write: the fields it must
+// carry, and the ones it must leave out.
+func assertGroupIdentityPayload(t *testing.T, r *http.Request) {
+	t.Helper()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("failed to read request body: %v", err)
+	}
+
+	var sent HubGroup
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	if sent.IDPGroupID != testIDPGroupID {
+		t.Fatalf("unexpected idp group id: %s", sent.IDPGroupID)
+	}
+	if sent.IDPGroupName != testHubGroupName {
+		t.Fatalf("unexpected idp group name: %s", sent.IDPGroupName)
+	}
+	// Without the module the group is tagged for no provider, and its id cannot be
+	// told from another directory's.
+	if sent.MappedInAuthModule == nil || sent.MappedInAuthModule.ID != testAuthModuleID {
+		t.Fatalf("payload does not carry the auth module: %+v", sent.MappedInAuthModule)
+	}
+	// The write must not carry a name or description: those belong to the YouTrack-side
+	// create, and resending them here would let this call overwrite them with empty
+	// values.
+	if sent.Name != "" || sent.Description != "" {
+		t.Fatalf("payload carries fields it must not send: %+v", sent)
+	}
+}
+
 func TestSetGroupIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -159,49 +192,22 @@ func TestSetGroupIdentity(t *testing.T) {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 
-		if r.Method == http.MethodPost {
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf("failed to read request body: %v", err)
-			}
-
-			var sent HubGroup
-			if err := json.Unmarshal(body, &sent); err != nil {
-				t.Fatalf("failed to unmarshal request body: %v", err)
-			}
-			if sent.IDPGroupID != testIDPGroupID {
-				t.Fatalf("unexpected idp group id: %s", sent.IDPGroupID)
-			}
-			if sent.IDPGroupName != testHubGroupName {
-				t.Fatalf("unexpected idp group name: %s", sent.IDPGroupName)
-			}
-			// Without the module the group is tagged for no provider, and its id
-			// cannot be told from another directory's.
-			if sent.MappedInAuthModule == nil || sent.MappedInAuthModule.ID != testAuthModuleID {
-				t.Fatalf("payload does not carry the auth module: %+v", sent.MappedInAuthModule)
-			}
-			// The write must not carry a name or description: those belong to the
-			// YouTrack-side create, and resending them here would let this call
-			// overwrite them with empty values.
-			if sent.Name != "" || sent.Description != "" {
-				t.Fatalf("payload carries fields it must not send: %+v", sent)
-			}
-
+		switch r.Method {
+		case http.MethodPost:
+			assertGroupIdentityPayload(t, r)
 			wrote = true
 			// Hub answers this write with 200 and an empty body.
 			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		if r.Method != http.MethodGet {
+		case http.MethodGet:
+			encodeJSON(t, w, HubGroup{
+				ID:           testHubGroupID,
+				Name:         testHubGroupName,
+				IDPGroupID:   testIDPGroupID,
+				IDPGroupName: testHubGroupName,
+			})
+		default:
 			t.Fatalf(errUnexpectedMethod, r.Method)
 		}
-		encodeJSON(t, w, HubGroup{
-			ID:           testHubGroupID,
-			Name:         testHubGroupName,
-			IDPGroupID:   testIDPGroupID,
-			IDPGroupName: testHubGroupName,
-		})
 	})
 	defer server.Close()
 
