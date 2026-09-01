@@ -1,4 +1,4 @@
-## Unreleased
+## 1.6.0
 FEATURES:
 - Add support for a Hub group's **identity-provider attributes**, so a group can be
   reconciled by the id of the role it represents at an upstream directory:
