@@ -410,6 +410,76 @@ func TestBanUser(t *testing.T) {
 	}
 }
 
+// newSetBannedHandler asserts the request writes exactly the wanted banned value and
+// answers with a user carrying it. wantBody is matched verbatim so that an unban, whose
+// whole point is that "banned":false survives marshalling, cannot pass on a body that
+// omitted the field.
+func newSetBannedHandler(t *testing.T, wantBody string, banned bool) http.HandlerFunc {
+	t.Helper()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		if !strings.Contains(string(body), wantBody) {
+			t.Fatalf("expected %s in request body, got %s", wantBody, string(body))
+		}
+
+		encodeJSON(t, w, User{ID: testUserID, Login: testUserLogin, Banned: banned})
+	}
+}
+
+func TestUnbanUser(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, newSetBannedHandler(t, `"banned":false`, false))
+	defer server.Close()
+
+	updated, err := client.UnbanUser(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if updated.Banned {
+		t.Fatal("expected an unbanned user response")
+	}
+}
+
+func TestSetUserBanned(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		banned   bool
+		wantBody string
+	}{
+		{name: "ban", banned: true, wantBody: `"banned":true`},
+		{name: "unban", banned: false, wantBody: `"banned":false`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, newSetBannedHandler(t, tc.wantBody, tc.banned))
+			defer server.Close()
+
+			updated, err := client.SetUserBanned(context.Background(), testUserID, tc.banned)
+			if err != nil {
+				t.Fatalf(fmtUnexpectedError, err)
+			}
+			if updated.Banned != tc.banned {
+				t.Fatalf("banned = %t, want %t", updated.Banned, tc.banned)
+			}
+		})
+	}
+}
+
 // --- DeleteUser ---
 
 func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bool) http.HandlerFunc {

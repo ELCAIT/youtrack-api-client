@@ -100,11 +100,59 @@ func (c *Client) UpdateUser(ctx context.Context, userID string, user User) (*Use
 	return &updated, nil
 }
 
+// bannedPayload carries the banned flag on its own, without omitempty, which is what
+// lets an unban reach the wire at all: User.Banned is omitempty, so a false there is
+// dropped from the JSON and Hub is asked to change nothing.
+type bannedPayload struct {
+	Banned bool `json:"banned"`
+}
+
+// SetUserBanned bans or unbans a user using Hub-style lifecycle semantics.
+//
+// Hub has no separate unban endpoint -- both directions are a write of the account's
+// banned flag -- so this is the single call for either, and the only one that can
+// express banned=false.
+func (c *Client) SetUserBanned(ctx context.Context, userID string, banned bool) (*User, error) {
+	rb, err := json.Marshal(bannedPayload{Banned: banned})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal set user banned payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, fmt.Sprintf(hubSpecificUserPath, c.HostURL, youtrackUsersAPIPath, url.PathEscape(userID), hubUserLifecycleFields), bytes.NewReader(rb))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create set user banned request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set user banned: %w", err)
+	}
+
+	var updated User
+	if err := json.Unmarshal(body, &updated); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal set user banned response: %w", err)
+	}
+
+	return &updated, nil
+}
+
 // BanUser bans a user using Hub-style lifecycle semantics.
+//
+// It is SetUserBanned(ctx, userID, true); use SetUserBanned directly to unban.
 func (c *Client) BanUser(ctx context.Context, userID string) (*User, error) {
-	updated, err := c.UpdateUser(ctx, userID, User{Banned: true})
+	updated, err := c.SetUserBanned(ctx, userID, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ban user: %w", err)
+	}
+
+	return updated, nil
+}
+
+// UnbanUser lifts a ban using Hub-style lifecycle semantics.
+func (c *Client) UnbanUser(ctx context.Context, userID string) (*User, error) {
+	updated, err := c.SetUserBanned(ctx, userID, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unban user: %w", err)
 	}
 
 	return updated, nil

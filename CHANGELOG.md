@@ -1,3 +1,18 @@
+## 1.7.0
+FEATURES:
+- Add `SetUserBanned(ctx, userID, banned)`, the single call that writes an account's
+  banned flag in either direction, and `UnbanUser(ctx, userID)` for the false case.
+  `BanUser` keeps its signature and now delegates to `SetUserBanned`.
+
+  An unban was previously impossible through this client: `User.Banned` is
+  `json:"banned,omitempty"`, so `UpdateUser` with `Banned: false` marshals a body without
+  the field at all and Hub is asked to change nothing. `SetUserBanned` marshals its own
+  payload type whose `banned` has no `omitempty`, so `false` reaches the wire. `User` is
+  unchanged, so this is additive -- no caller has to move off `BanUser`.
+
+FIXES:
+- `Version` reported `1.5.0` since the 1.6.0 release; it now tracks the release again.
+
 ## 1.6.0
 FEATURES:
 - Add support for a Hub group's **identity-provider attributes**, so a group can be
