@@ -1,3 +1,23 @@
+## 1.8.0
+FEATURES:
+- Add `UpdateUserDetailNames(ctx, userID, detailID, userName, fullName)`, which writes the
+  descriptive names on an existing user detail. Hub matches a detail on its identifier
+  alone, so the names change no authentication behaviour -- they are what makes an
+  identity legible in the Hub UI, which shows a detail carrying none of them as a bare
+  external id that no administrator can tie back to a person.
+
+  These names could not be corrected before: a detail whose identifier is already present
+  must not be added a second time, so `AddUserDetail` cannot repair one, and the only
+  alternative was to remove the detail and re-add it -- which leaves the account
+  unreconcilable in between.
+
+FIXES:
+- `ListUserDetails`, `AddUserDetail` and `ListUsersByAuthModule` now request `userName`
+  and `fullName` in their `fields` projection. Hub returns only what is asked for, so
+  every detail previously decoded with empty names regardless of what it held, and a
+  caller could not tell a detail that carries names from one that does not -- which is
+  what a backfill has to decide.
+
 ## 1.7.0
 FEATURES:
 - Add `SetUserBanned(ctx, userID, banned)`, the single call that writes an account's
