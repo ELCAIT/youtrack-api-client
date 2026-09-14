@@ -276,7 +276,7 @@ func TestAddUserDetail(t *testing.T) {
 
 // The subtype and the module are what make a detail addressable; without either, Hub
 // would reject the write, so the client refuses before spending a round trip.
-// --- UpdateUserDetailNames ---
+// --- UpdateUserDetailAttributes ---
 
 // The repair path for an account linked before the names were written.
 //
@@ -292,49 +292,13 @@ func TestUpdateUserDetailAttributes(t *testing.T) {
 		// The write, then the read-back: Hub answers the write with an empty body.
 		if r.Method == http.MethodPost {
 			posted = true
-
-			if r.URL.Path != "/hub/api/rest/userdetails/detail-1" {
-				t.Fatalf("write must not be addressed under the owning user: %s", r.URL.Path)
-			}
-
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf("failed to read request body: %v", err)
-			}
-
-			var sent UserDetail
-			if err := json.Unmarshal(body, &sent); err != nil {
-				t.Fatalf("failed to unmarshal request body: %v", err)
-			}
-			if sent.Type != Oauth2DetailsType {
-				t.Fatalf("payload must carry the subtype discriminator, got %+v", sent)
-			}
-			if sent.UserName != "jdoe" || sent.FullName != "John Doe" {
-				t.Fatalf("unexpected names: %+v", sent)
-			}
-			// Hub models the address as an object and returns it as one, so a bare
-			// string would not read back as what was written.
-			if sent.Email == nil || sent.Email.Email != "jdoe@example.com" {
-				t.Fatalf("unexpected email: %+v", sent.Email)
-			}
-			if sent.Email.Type != EmailDetailType {
-				t.Fatalf("email must carry its own discriminator, got %q", sent.Email.Type)
-			}
-			if sent.Identifier != "" || sent.AuthModule != nil {
-				t.Fatalf("payload must carry type and names only, got %+v", sent)
-			}
-
+			assertNamesWrite(t, r)
 			w.WriteHeader(http.StatusOK)
+
 			return
 		}
 
-		if !posted {
-			t.Fatal("the detail was read before it was written")
-		}
-		if fields := r.URL.Query().Get("fields"); !strings.Contains(fields, "userName") || !strings.Contains(fields, "fullName") {
-			t.Fatalf("names missing from the fields projection: %s", fields)
-		}
-
+		assertNamesReadBack(t, r, posted)
 		encodeJSON(t, w, UserDetail{
 			ID:             "detail-1",
 			Type:           Oauth2DetailsType,
@@ -352,6 +316,62 @@ func TestUpdateUserDetailAttributes(t *testing.T) {
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
+	assertDetailAttributes(t, updated)
+}
+
+// assertNamesWrite checks the request that carries the names: where it is addressed, and
+// that its payload is the type discriminator plus the names and nothing else.
+func assertNamesWrite(t *testing.T, r *http.Request) {
+	t.Helper()
+
+	if r.URL.Path != "/hub/api/rest/userdetails/detail-1" {
+		t.Fatalf("write must not be addressed under the owning user: %s", r.URL.Path)
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("failed to read request body: %v", err)
+	}
+
+	var sent UserDetail
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	if sent.Type != Oauth2DetailsType {
+		t.Fatalf("payload must carry the subtype discriminator, got %+v", sent)
+	}
+	if sent.UserName != "jdoe" || sent.FullName != "John Doe" {
+		t.Fatalf("unexpected names: %+v", sent)
+	}
+	// Hub models the address as an object and returns it as one, so a bare string would
+	// not read back as what was written.
+	if sent.Email == nil || sent.Email.Email != "jdoe@example.com" {
+		t.Fatalf("unexpected email: %+v", sent.Email)
+	}
+	if sent.Email.Type != EmailDetailType {
+		t.Fatalf("email must carry its own discriminator, got %q", sent.Email.Type)
+	}
+	if sent.Identifier != "" || sent.AuthModule != nil {
+		t.Fatalf("payload must carry type and names only, got %+v", sent)
+	}
+}
+
+// assertNamesReadBack checks that the read follows the write and projects the names.
+func assertNamesReadBack(t *testing.T, r *http.Request, posted bool) {
+	t.Helper()
+
+	if !posted {
+		t.Fatal("the detail was read before it was written")
+	}
+	if fields := r.URL.Query().Get("fields"); !strings.Contains(fields, "userName") || !strings.Contains(fields, "fullName") {
+		t.Fatalf("names missing from the fields projection: %s", fields)
+	}
+}
+
+// assertDetailAttributes checks the detail the client returns to the caller.
+func assertDetailAttributes(t *testing.T, updated *UserDetail) {
+	t.Helper()
+
 	if updated.UserName != "jdoe" || updated.FullName != "John Doe" {
 		t.Fatalf("unexpected names on the updated detail: %+v", updated)
 	}
