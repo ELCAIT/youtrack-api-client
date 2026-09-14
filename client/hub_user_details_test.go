@@ -276,46 +276,29 @@ func TestAddUserDetail(t *testing.T) {
 
 // The subtype and the module are what make a detail addressable; without either, Hub
 // would reject the write, so the client refuses before spending a round trip.
-// --- UpdateUserDetailNames ---
+// --- UpdateUserDetailAttributes ---
 
-// The repair path for an account linked before the names were written: the detail is
-// addressed directly, and only the names are sent. A payload carrying the identifier or
-// the auth module would ask Hub to re-point the detail at a different identity.
-func TestUpdateUserDetailNames(t *testing.T) {
+// The repair path for an account linked before the names were written.
+//
+// The path and the discriminator are both asserted because a live Hub rejects either
+// mistake: it declares only GET and DELETE on the detail under its owning user and
+// answers a write there with 405, and it answers a payload with no type at all with a
+// 500 naming DetailsJSON.
+func TestUpdateUserDetailAttributes(t *testing.T) {
 	t.Parallel()
 
+	var posted bool
 	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf(errUnexpectedMethod, r.Method)
-		}
-		if !strings.HasSuffix(r.URL.Path, "/hub/api/rest/users/"+testUserID+"/userdetails/detail-1") {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-		// Without these in the projection the response decodes with empty names, and a
-		// caller cannot tell a repaired detail from one still missing them.
-		if fields := r.URL.Query().Get("fields"); !strings.Contains(fields, "userName") || !strings.Contains(fields, "fullName") {
-			t.Fatalf("names missing from the fields projection: %s", fields)
+		// The write, then the read-back: Hub answers the write with an empty body.
+		if r.Method == http.MethodPost {
+			posted = true
+			assertNamesWrite(t, r)
+			w.WriteHeader(http.StatusOK)
+
+			return
 		}
 
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("failed to read request body: %v", err)
-		}
-
-		var sent UserDetail
-		if err := json.Unmarshal(body, &sent); err != nil {
-			t.Fatalf("failed to unmarshal request body: %v", err)
-		}
-		if sent.UserName != "jdoe" {
-			t.Fatalf("unexpected userName: %s", sent.UserName)
-		}
-		if sent.FullName != "John Doe" {
-			t.Fatalf("unexpected fullName: %s", sent.FullName)
-		}
-		if sent.Identifier != "" || sent.AuthModule != nil {
-			t.Fatalf("payload must carry names only, got %+v", sent)
-		}
-
+		assertNamesReadBack(t, r, posted)
 		encodeJSON(t, w, UserDetail{
 			ID:             "detail-1",
 			Type:           Oauth2DetailsType,
@@ -323,26 +306,105 @@ func TestUpdateUserDetailNames(t *testing.T) {
 			AuthModuleName: testAuthModuleName,
 			UserName:       "jdoe",
 			FullName:       "John Doe",
+			Email:          NewDetailEmail("jdoe@example.com"),
 		})
 	})
 	defer server.Close()
 
-	updated, err := client.UpdateUserDetailNames(context.Background(), testUserID, "detail-1", "jdoe", "John Doe")
+	updated, err := client.UpdateUserDetailAttributes(context.Background(), "detail-1", Oauth2DetailsType,
+		UserDetailAttributes{UserName: "jdoe", FullName: "John Doe", Email: "jdoe@example.com"})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
-	if updated.UserName != "jdoe" || updated.FullName != "John Doe" {
-		t.Fatalf("unexpected names on the updated detail: %+v", updated)
+	assertDetailAttributes(t, updated)
+}
+
+// assertNamesWrite checks the request that carries the names: where it is addressed, and
+// that its payload is the type discriminator plus the names and nothing else.
+func assertNamesWrite(t *testing.T, r *http.Request) {
+	t.Helper()
+
+	if r.URL.Path != "/hub/api/rest/userdetails/detail-1" {
+		t.Fatalf("write must not be addressed under the owning user: %s", r.URL.Path)
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatalf("failed to read request body: %v", err)
+	}
+
+	var sent UserDetail
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	if sent.Type != Oauth2DetailsType {
+		t.Fatalf("payload must carry the subtype discriminator, got %+v", sent)
+	}
+	if sent.UserName != "jdoe" || sent.FullName != "John Doe" {
+		t.Fatalf("unexpected names: %+v", sent)
+	}
+	// Hub models the address as an object and returns it as one, so a bare string would
+	// not read back as what was written.
+	if sent.Email == nil || sent.Email.Email != "jdoe@example.com" {
+		t.Fatalf("unexpected email: %+v", sent.Email)
+	}
+	if sent.Email.Type != EmailDetailType {
+		t.Fatalf("email must carry its own discriminator, got %q", sent.Email.Type)
+	}
+	if sent.Identifier != "" || sent.AuthModule != nil {
+		t.Fatalf("payload must carry type and names only, got %+v", sent)
 	}
 }
 
-func TestUpdateUserDetailNamesRejectsIncompleteArguments(t *testing.T) {
+// assertNamesReadBack checks that the read follows the write and projects the names.
+func assertNamesReadBack(t *testing.T, r *http.Request, posted bool) {
+	t.Helper()
+
+	if !posted {
+		t.Fatal("the detail was read before it was written")
+	}
+	if fields := r.URL.Query().Get("fields"); !strings.Contains(fields, "userName") || !strings.Contains(fields, "fullName") {
+		t.Fatalf("names missing from the fields projection: %s", fields)
+	}
+}
+
+// assertDetailAttributes checks the detail the client returns to the caller.
+func assertDetailAttributes(t *testing.T, updated *UserDetail) {
+	t.Helper()
+
+	if updated.UserName != "jdoe" || updated.FullName != "John Doe" {
+		t.Fatalf("unexpected names on the updated detail: %+v", updated)
+	}
+	if updated.Email == nil || updated.Email.Email != "jdoe@example.com" {
+		t.Fatalf("unexpected email on the updated detail: %+v", updated.Email)
+	}
+}
+
+// An empty address must send no key: Hub leaves an omitted field as it was, and an empty
+// object would ask it to store a blank address.
+func TestNewDetailEmailIsNilForEmpty(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]struct{ userID, detailID string }{
-		"missing user id":   {"", "detail-1"},
-		"missing detail id": {testUserID, ""},
-		"blank user id":     {"   ", "detail-1"},
+	if got := NewDetailEmail("   "); got != nil {
+		t.Fatalf("expected nil for a blank address, got %+v", got)
+	}
+
+	body, err := json.Marshal(UserDetail{Type: Oauth2DetailsType, Email: NewDetailEmail("")})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if strings.Contains(string(body), "email") {
+		t.Fatalf("a blank address must marshal to no key at all, got %s", body)
+	}
+}
+
+func TestUpdateUserDetailAttributesRejectIncompleteArguments(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct{ detailID, detailType string }{
+		"missing detail id":   {"", Oauth2DetailsType},
+		"missing detail type": {"detail-1", ""},
+		"blank detail id":     {"   ", Oauth2DetailsType},
 	}
 
 	for name, tc := range tests {
@@ -354,7 +416,8 @@ func TestUpdateUserDetailNamesRejectsIncompleteArguments(t *testing.T) {
 			})
 			defer server.Close()
 
-			if _, err := client.UpdateUserDetailNames(context.Background(), tc.userID, tc.detailID, "jdoe", "John Doe"); err == nil {
+			if _, err := client.UpdateUserDetailAttributes(context.Background(), tc.detailID, tc.detailType,
+				UserDetailAttributes{UserName: "jdoe"}); err == nil {
 				t.Fatal("expected an error, got nil")
 			}
 		})

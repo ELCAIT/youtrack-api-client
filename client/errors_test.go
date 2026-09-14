@@ -42,26 +42,26 @@ func TestErrorClassification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsRetryable(tt.err); got != tt.retryable {
-				t.Errorf("IsRetryable = %v, want %v", got, tt.retryable)
+			// One row per predicate, so adding a classifier is a line rather than
+			// another branch in the loop body.
+			predicates := []struct {
+				name string
+				got  func(error) bool
+				want bool
+			}{
+				{"IsRetryable", IsRetryable, tt.retryable},
+				{"IsNotFoundError", IsNotFoundError, tt.notFound},
+				{"IsConflict", IsConflict, tt.conflict},
+				{"IsForbidden", IsForbidden, tt.forbidden},
+				{"IsUnauthorized", IsUnauthorized, tt.unauthorized},
+				{"IsRateLimited", IsRateLimited, tt.rateLimited},
+				{"IsAlreadyExists", IsAlreadyExists, tt.alreadyExists},
 			}
-			if got := IsNotFoundError(tt.err); got != tt.notFound {
-				t.Errorf("IsNotFoundError = %v, want %v", got, tt.notFound)
-			}
-			if got := IsConflict(tt.err); got != tt.conflict {
-				t.Errorf("IsConflict = %v, want %v", got, tt.conflict)
-			}
-			if got := IsForbidden(tt.err); got != tt.forbidden {
-				t.Errorf("IsForbidden = %v, want %v", got, tt.forbidden)
-			}
-			if got := IsUnauthorized(tt.err); got != tt.unauthorized {
-				t.Errorf("IsUnauthorized = %v, want %v", got, tt.unauthorized)
-			}
-			if got := IsRateLimited(tt.err); got != tt.rateLimited {
-				t.Errorf("IsRateLimited = %v, want %v", got, tt.rateLimited)
-			}
-			if got := IsAlreadyExists(tt.err); got != tt.alreadyExists {
-				t.Errorf("IsAlreadyExists = %v, want %v", got, tt.alreadyExists)
+
+			for _, p := range predicates {
+				if got := p.got(tt.err); got != p.want {
+					t.Errorf("%s = %v, want %v", p.name, got, p.want)
+				}
 			}
 		})
 	}

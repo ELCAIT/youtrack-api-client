@@ -25,10 +25,14 @@ const (
 
 	// hubUserDetailOwnFields is the projection of a user detail on its own, used
 	// wherever details are read or written outside the account listing.
-	hubUserDetailOwnFields = "id,$type,identifier,authModuleName,userName,fullName"
+	hubUserDetailOwnFields = "id,$type,identifier,authModuleName,userName,fullName,email(email,verified)"
 
 	// hubAuthModuleFields is the projection needed to resolve a module by name.
 	hubAuthModuleFields = "id,name,$type"
+
+	// hubRestUserDetailsAPIPath addresses a user detail on its own. Hub declares only
+	// GET and DELETE on the detail under its owning user, so a write goes here.
+	hubRestUserDetailsAPIPath = "hub/api/rest/userdetails"
 
 	// hubUserDetailPageSize is the page size used when scanning the users of one
 	// authentication module.
@@ -261,61 +265,113 @@ func (c *Client) ListUserDetails(ctx context.Context, userID string) ([]UserDeta
 	return page.UserDetails, nil
 }
 
-// UpdateUserDetailNames writes the descriptive names on an existing user detail.
+// UserDetailAttributes are the descriptive fields of a user detail.
 //
-// Hub matches a detail on its identifier alone, so these names change no authentication
+// Hub matches a detail on its identifier alone, so none of these change authentication
 // behaviour. They are what makes an identity legible in the Hub UI, which shows a detail
 // carrying none of them as a bare external id that no administrator can tie back to a
 // person.
 //
-// This exists because the names cannot be corrected through AddUserDetail: a detail
-// whose identifier is already present must not be added a second time, so an account
-// linked without names can only be repaired by writing to the detail itself. The
-// alternative -- removing the detail and re-adding it -- leaves the account
-// unreconcilable in between, which is too high a price for a cosmetic field.
+// A field left empty sends no key at all, and Hub leaves what it holds untouched, so a
+// caller may write one attribute without restating the others.
+type UserDetailAttributes struct {
+	UserName string
+	FullName string
+	Email    string
+}
+
+// apply writes the attributes onto a detail payload.
+func (a UserDetailAttributes) apply(detail *UserDetail) {
+	detail.UserName = a.UserName
+	detail.FullName = a.FullName
+	detail.Email = NewDetailEmail(a.Email)
+}
+
+// IsEmpty reports whether there is nothing to write.
+func (a UserDetailAttributes) IsEmpty() bool {
+	return strings.TrimSpace(a.UserName) == "" &&
+		strings.TrimSpace(a.FullName) == "" &&
+		strings.TrimSpace(a.Email) == ""
+}
+
+// UpdateUserDetailAttributes writes the descriptive attributes on an existing user
+// detail.
 //
-// Either name may be empty, which clears it: both fields carry omitempty, so an empty
-// value sends no key and Hub leaves that name as it was. A caller wanting to clear one
-// has no way to express it here, and none has needed to.
+// This exists because they cannot be corrected through AddUserDetail: a detail whose
+// identifier is already present must not be added a second time, so an account linked
+// without them can only be repaired by writing to the detail itself. The alternative --
+// removing the detail and re-adding it -- leaves the account unreconcilable in between,
+// which is too high a price for a cosmetic field.
 //
-// Hub answers this write with the updated detail.
-func (c *Client) UpdateUserDetailNames(ctx context.Context, userID, detailID, userName, fullName string) (*UserDetail, error) {
-	if strings.TrimSpace(userID) == "" {
-		return nil, fmt.Errorf("user id must not be empty")
-	}
+// The detail is addressed at the top-level /userdetails/{id}, not under its owning user.
+// Hub declares only GET and DELETE on /users/{userId}/userdetails/{detailsId} and answers
+// a write there with 405; the top-level path is the one that accepts it.
+//
+// detailType is the subtype discriminator, such as Oauth2DetailsType, and is required:
+// Hub routes the write by it and answers a payload without one with 500
+// "UserDetailsCrudService not found by UserDetails of class DetailsJSON". It must match
+// the detail's own type -- the $type a read reports.
+//
+// Hub answers this write with 200 and an empty body, so the result is read back rather
+// than parsed from the response.
+func (c *Client) UpdateUserDetailAttributes(ctx context.Context, detailID, detailType string, attrs UserDetailAttributes) (*UserDetail, error) {
 	if strings.TrimSpace(detailID) == "" {
 		return nil, fmt.Errorf("detail id must not be empty")
 	}
+	if strings.TrimSpace(detailType) == "" {
+		return nil, fmt.Errorf("detail type must not be empty")
+	}
 
-	// Only the names are sent. A payload carrying the identifier or the auth module
-	// would ask Hub to re-point the detail at a different account identity, which is a
-	// different operation from labelling the one that is there.
-	rb, err := json.Marshal(UserDetail{UserName: userName, FullName: fullName})
+	// Only the type and the attributes are sent. A payload carrying the identifier or
+	// the auth module would ask Hub to re-point the detail at a different account
+	// identity, which is a different operation from labelling the one that is there.
+	payload := UserDetail{Type: detailType}
+	attrs.apply(&payload)
+
+	rb, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal user detail names payload: %w", err)
+		return nil, fmt.Errorf("failed to marshal user detail attributes payload: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("%s/%s/%s", c.HostURL, hubRestUserDetailsAPIPath, url.PathEscape(detailID))
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create update user detail attributes request: %w", err)
+	}
+
+	if _, err := c.doRequest(req); err != nil {
+		return nil, fmt.Errorf("failed to update user detail attributes: %w", err)
+	}
+
+	return c.GetUserDetail(ctx, detailID)
+}
+
+// GetUserDetail returns one authentication detail, addressed without its owning user.
+func (c *Client) GetUserDetail(ctx context.Context, detailID string) (*UserDetail, error) {
+	if strings.TrimSpace(detailID) == "" {
+		return nil, fmt.Errorf("detail id must not be empty")
 	}
 
 	values := url.Values{}
 	values.Set("fields", hubUserDetailOwnFields)
 
-	endpoint := fmt.Sprintf("%s/%s/%s/userdetails/%s?%s",
-		c.HostURL, hubRestUsersAPIPath, url.PathEscape(userID), url.PathEscape(detailID), values.Encode())
-	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
+	endpoint := fmt.Sprintf("%s/%s/%s?%s", c.HostURL, hubRestUserDetailsAPIPath, url.PathEscape(detailID), values.Encode())
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create update user detail names request: %w", err)
+		return nil, fmt.Errorf("failed to create get user detail request: %w", err)
 	}
 
 	body, err := c.doRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update user detail names: %w", err)
+		return nil, fmt.Errorf("failed to get user detail: %w", err)
 	}
 
-	var updated UserDetail
-	if err := json.Unmarshal(body, &updated); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal updated user detail: %w", err)
+	var detail UserDetail
+	if err := json.Unmarshal(body, &detail); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal user detail: %w", err)
 	}
 
-	return &updated, nil
+	return &detail, nil
 }
 
 // RemoveUserDetail detaches an authentication detail from a Hub user. A detail that is

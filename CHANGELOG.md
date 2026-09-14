@@ -1,3 +1,35 @@
+## 1.9.0
+FEATURES:
+- `UserDetail` now carries the identity's **email**, as `*DetailEmail`. Hub models the
+  address as an object of its own rather than a string and returns it that way, so a
+  caller that sent a bare string would not read back what it wrote. `NewDetailEmail`
+  builds one, returning nil for a blank address so it marshals to no key at all -- Hub
+  leaves an omitted field as it was, and an empty object would ask it to store a blank
+  address.
+
+- `UpdateUserDetailNames` becomes `UpdateUserDetailAttributes`, taking a
+  `UserDetailAttributes` struct instead of two name arguments, so the email travels with
+  the names and later attributes need no further signature change.
+
+FIXES:
+- `UpdateUserDetailNames` could not write against a live Hub. Three things were wrong, and
+  1.8.0's test double accepted all of them:
+  - It addressed the detail under its owning user. Hub declares only `GET` and `DELETE` on
+    `/users/{userId}/userdetails/{detailsId}` and answers a write there with **405 Method
+    Not Allowed**. The write goes to the top-level `/userdetails/{detailsId}`.
+  - It sent no subtype discriminator. Hub routes the write by it and answers a payload
+    without one with **500** `UserDetailsCrudService not found by UserDetails of class
+    DetailsJSON`. The detail's type is now a required argument.
+  - It parsed the response body, which Hub leaves empty on this write. The detail is read
+    back instead.
+
+  The signature changed from `(ctx, userID, detailID, userName, fullName)` to
+  `(ctx, detailID, detailType, userName, fullName)`: the owning user is not part of the
+  address, and the subtype is required. Callers pass the `Type` of the detail they read.
+
+- Add `GetUserDetail(ctx, detailID)`, which reads one detail addressed without its owning
+  user. It is what the write above reads back through.
+
 ## 1.8.0
 FEATURES:
 - Add `UpdateUserDetailNames(ctx, userID, detailID, userName, fullName)`, which writes the
