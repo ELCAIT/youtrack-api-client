@@ -1,3 +1,23 @@
+## 1.8.1
+FIXES:
+- `UpdateUserDetailNames` could not write against a live Hub. Three things were wrong, and
+  1.8.0's test double accepted all of them:
+  - It addressed the detail under its owning user. Hub declares only `GET` and `DELETE` on
+    `/users/{userId}/userdetails/{detailsId}` and answers a write there with **405 Method
+    Not Allowed**. The write goes to the top-level `/userdetails/{detailsId}`.
+  - It sent no subtype discriminator. Hub routes the write by it and answers a payload
+    without one with **500** `UserDetailsCrudService not found by UserDetails of class
+    DetailsJSON`. The detail's type is now a required argument.
+  - It parsed the response body, which Hub leaves empty on this write. The detail is read
+    back instead.
+
+  The signature changed from `(ctx, userID, detailID, userName, fullName)` to
+  `(ctx, detailID, detailType, userName, fullName)`: the owning user is not part of the
+  address, and the subtype is required. Callers pass the `Type` of the detail they read.
+
+- Add `GetUserDetail(ctx, detailID)`, which reads one detail addressed without its owning
+  user. It is what the write above reads back through.
+
 ## 1.8.0
 FEATURES:
 - Add `UpdateUserDetailNames(ctx, userID, detailID, userName, fullName)`, which writes the
