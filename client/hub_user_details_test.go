@@ -284,7 +284,7 @@ func TestAddUserDetail(t *testing.T) {
 // mistake: it declares only GET and DELETE on the detail under its owning user and
 // answers a write there with 405, and it answers a payload with no type at all with a
 // 500 naming DetailsJSON.
-func TestUpdateUserDetailNames(t *testing.T) {
+func TestUpdateUserDetailAttributes(t *testing.T) {
 	t.Parallel()
 
 	var posted bool
@@ -312,6 +312,14 @@ func TestUpdateUserDetailNames(t *testing.T) {
 			if sent.UserName != "jdoe" || sent.FullName != "John Doe" {
 				t.Fatalf("unexpected names: %+v", sent)
 			}
+			// Hub models the address as an object and returns it as one, so a bare
+			// string would not read back as what was written.
+			if sent.Email == nil || sent.Email.Email != "jdoe@example.com" {
+				t.Fatalf("unexpected email: %+v", sent.Email)
+			}
+			if sent.Email.Type != EmailDetailType {
+				t.Fatalf("email must carry its own discriminator, got %q", sent.Email.Type)
+			}
 			if sent.Identifier != "" || sent.AuthModule != nil {
 				t.Fatalf("payload must carry type and names only, got %+v", sent)
 			}
@@ -334,20 +342,43 @@ func TestUpdateUserDetailNames(t *testing.T) {
 			AuthModuleName: testAuthModuleName,
 			UserName:       "jdoe",
 			FullName:       "John Doe",
+			Email:          NewDetailEmail("jdoe@example.com"),
 		})
 	})
 	defer server.Close()
 
-	updated, err := client.UpdateUserDetailNames(context.Background(), "detail-1", Oauth2DetailsType, "jdoe", "John Doe")
+	updated, err := client.UpdateUserDetailAttributes(context.Background(), "detail-1", Oauth2DetailsType,
+		UserDetailAttributes{UserName: "jdoe", FullName: "John Doe", Email: "jdoe@example.com"})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
 	}
 	if updated.UserName != "jdoe" || updated.FullName != "John Doe" {
 		t.Fatalf("unexpected names on the updated detail: %+v", updated)
 	}
+	if updated.Email == nil || updated.Email.Email != "jdoe@example.com" {
+		t.Fatalf("unexpected email on the updated detail: %+v", updated.Email)
+	}
 }
 
-func TestUpdateUserDetailNamesRejectsIncompleteArguments(t *testing.T) {
+// An empty address must send no key: Hub leaves an omitted field as it was, and an empty
+// object would ask it to store a blank address.
+func TestNewDetailEmailIsNilForEmpty(t *testing.T) {
+	t.Parallel()
+
+	if got := NewDetailEmail("   "); got != nil {
+		t.Fatalf("expected nil for a blank address, got %+v", got)
+	}
+
+	body, err := json.Marshal(UserDetail{Type: Oauth2DetailsType, Email: NewDetailEmail("")})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if strings.Contains(string(body), "email") {
+		t.Fatalf("a blank address must marshal to no key at all, got %s", body)
+	}
+}
+
+func TestUpdateUserDetailAttributesRejectIncompleteArguments(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct{ detailID, detailType string }{
@@ -365,7 +396,8 @@ func TestUpdateUserDetailNamesRejectsIncompleteArguments(t *testing.T) {
 			})
 			defer server.Close()
 
-			if _, err := client.UpdateUserDetailNames(context.Background(), tc.detailID, tc.detailType, "jdoe", "John Doe"); err == nil {
+			if _, err := client.UpdateUserDetailAttributes(context.Background(), tc.detailID, tc.detailType,
+				UserDetailAttributes{UserName: "jdoe"}); err == nil {
 				t.Fatal("expected an error, got nil")
 			}
 		})

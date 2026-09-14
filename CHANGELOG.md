@@ -1,4 +1,16 @@
-## 1.8.1
+## 1.9.0
+FEATURES:
+- `UserDetail` now carries the identity's **email**, as `*DetailEmail`. Hub models the
+  address as an object of its own rather than a string and returns it that way, so a
+  caller that sent a bare string would not read back what it wrote. `NewDetailEmail`
+  builds one, returning nil for a blank address so it marshals to no key at all -- Hub
+  leaves an omitted field as it was, and an empty object would ask it to store a blank
+  address.
+
+- `UpdateUserDetailNames` becomes `UpdateUserDetailAttributes`, taking a
+  `UserDetailAttributes` struct instead of two name arguments, so the email travels with
+  the names and later attributes need no further signature change.
+
 FIXES:
 - `UpdateUserDetailNames` could not write against a live Hub. Three things were wrong, and
   1.8.0's test double accepted all of them:

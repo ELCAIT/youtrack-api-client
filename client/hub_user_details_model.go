@@ -1,5 +1,7 @@
 package youtrack
 
+import "strings"
+
 // AuthModule identifies a Hub authentication module.
 //
 // Hub reports the module both on itself and on every user detail it produced. The
@@ -36,6 +38,35 @@ type UserDetail struct {
 	AuthModuleName string `json:"authModuleName,omitempty"`
 	UserName       string `json:"userName,omitempty"`
 	FullName       string `json:"fullName,omitempty"`
+	// Email is the address the provider reports for this identity. Hub models it as
+	// an object of its own rather than a string, and returns it that way, so a caller
+	// that sent a bare string would not read back what it wrote.
+	Email *DetailEmail `json:"email,omitempty"`
+}
+
+// DetailEmail is an email address as Hub attaches it to a user detail.
+//
+// Verified says whether the provider vouched for the address. An identity synchronised
+// from a directory that authenticates its users is verified by construction: the account
+// is the directory's, and the address is the one it holds.
+type DetailEmail struct {
+	Type     string `json:"type,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Verified bool   `json:"verified"`
+}
+
+// EmailDetailType is the Hub discriminator for the email object on a user detail.
+const EmailDetailType = "EmailJSON"
+
+// NewDetailEmail returns the email object for an address a provider vouched for, or nil
+// for an empty address so that it marshals to no key at all: Hub leaves an omitted field
+// as it was, and sending an empty object would ask it to store a blank address.
+func NewDetailEmail(email string) *DetailEmail {
+	if strings.TrimSpace(email) == "" {
+		return nil
+	}
+
+	return &DetailEmail{Type: EmailDetailType, Email: strings.TrimSpace(email), Verified: true}
 }
 
 // HubUser is a user as the Hub REST API represents it.
