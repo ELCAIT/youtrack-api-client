@@ -276,6 +276,122 @@ func TestAddUserDetail(t *testing.T) {
 
 // The subtype and the module are what make a detail addressable; without either, Hub
 // would reject the write, so the client refuses before spending a round trip.
+// --- UpdateUserDetailNames ---
+
+// The repair path for an account linked before the names were written: the detail is
+// addressed directly, and only the names are sent. A payload carrying the identifier or
+// the auth module would ask Hub to re-point the detail at a different identity.
+func TestUpdateUserDetailNames(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/hub/api/rest/users/"+testUserID+"/userdetails/detail-1") {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		// Without these in the projection the response decodes with empty names, and a
+		// caller cannot tell a repaired detail from one still missing them.
+		if fields := r.URL.Query().Get("fields"); !strings.Contains(fields, "userName") || !strings.Contains(fields, "fullName") {
+			t.Fatalf("names missing from the fields projection: %s", fields)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var sent UserDetail
+		if err := json.Unmarshal(body, &sent); err != nil {
+			t.Fatalf("failed to unmarshal request body: %v", err)
+		}
+		if sent.UserName != "jdoe" {
+			t.Fatalf("unexpected userName: %s", sent.UserName)
+		}
+		if sent.FullName != "John Doe" {
+			t.Fatalf("unexpected fullName: %s", sent.FullName)
+		}
+		if sent.Identifier != "" || sent.AuthModule != nil {
+			t.Fatalf("payload must carry names only, got %+v", sent)
+		}
+
+		encodeJSON(t, w, UserDetail{
+			ID:             "detail-1",
+			Type:           Oauth2DetailsType,
+			Identifier:     testIdentifier,
+			AuthModuleName: testAuthModuleName,
+			UserName:       "jdoe",
+			FullName:       "John Doe",
+		})
+	})
+	defer server.Close()
+
+	updated, err := client.UpdateUserDetailNames(context.Background(), testUserID, "detail-1", "jdoe", "John Doe")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if updated.UserName != "jdoe" || updated.FullName != "John Doe" {
+		t.Fatalf("unexpected names on the updated detail: %+v", updated)
+	}
+}
+
+func TestUpdateUserDetailNamesRejectsIncompleteArguments(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct{ userID, detailID string }{
+		"missing user id":   {"", "detail-1"},
+		"missing detail id": {testUserID, ""},
+		"blank user id":     {"   ", "detail-1"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, func(_ http.ResponseWriter, _ *http.Request) {
+				t.Fatal("an incomplete call must not reach the server")
+			})
+			defer server.Close()
+
+			if _, err := client.UpdateUserDetailNames(context.Background(), tc.userID, tc.detailID, "jdoe", "John Doe"); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+		})
+	}
+}
+
+// A detail read back must carry its names, so that a caller deciding whether to repair
+// one is not told every detail is missing them by the projection alone.
+func TestListUserDetailsReturnsNames(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if fields := r.URL.Query().Get("fields"); !strings.Contains(fields, "userName") || !strings.Contains(fields, "fullName") {
+			t.Fatalf("names missing from the fields projection: %s", fields)
+		}
+
+		encodeJSON(t, w, map[string]any{"userdetails": []UserDetail{{
+			ID:         "detail-1",
+			Identifier: testIdentifier,
+			UserName:   "jdoe",
+			FullName:   "John Doe",
+		}}})
+	})
+	defer server.Close()
+
+	details, err := client.ListUserDetails(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if len(details) != 1 {
+		t.Fatalf("unexpected detail count: %d", len(details))
+	}
+	if details[0].UserName != "jdoe" || details[0].FullName != "John Doe" {
+		t.Fatalf("unexpected names: %+v", details[0])
+	}
+}
+
 func TestAddUserDetailRejectsIncompletePayload(t *testing.T) {
 	t.Parallel()
 
