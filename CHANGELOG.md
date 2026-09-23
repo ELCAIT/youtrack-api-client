@@ -5,6 +5,12 @@ FEATURES:
   `DeleteOwnedBundle` and `IsOwnedBundleNotFoundError`, mirroring the enum and state bundle
   methods. `OwnedBundleElement` carries the value's optional `Owner` as a `*UserRef`; it has
   no localized name, since YouTrack models owned values as plain `BundleElement`s.
+- Add `AddOwnedBundleValue`, `UpdateOwnedBundleValue` and `DeleteOwnedBundleValue` for editing
+  one value of an owned bundle. YouTrack ignores changes to values that already exist when they
+  arrive in `UpdateOwnedBundle`'s values list, so renaming, archiving or re-owning a value has to
+  go through the per-value endpoint. `UpdateOwnedBundleValue` takes an `OwnedBundleValueUpdate`,
+  which replaces every field it carries: a nil `Owner` or `Description` is sent as `null` and
+  clears it.
 
 ## 1.9.0
 FEATURES:

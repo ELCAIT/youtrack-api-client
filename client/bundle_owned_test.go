@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 )
 
@@ -41,7 +42,7 @@ func TestGetOwnedBundleByID(t *testing.T) {
 		if r.URL.Path != ownedBundleByIDTestURL {
 			t.Errorf(fmtUnexpectedPath, r.URL.Path)
 		}
-		if got := r.URL.Query().Get("fields"); got == "" {
+		if r.URL.Query().Get("fields") == "" {
 			t.Error("fields query parameter missing")
 		}
 		encodeJSON(t, w, testOwnedBundle())
@@ -97,15 +98,38 @@ func TestGetOwnedBundleByName(t *testing.T) {
 
 			bundle, err := client.GetOwnedBundleByName(context.Background(), tc.lookup)
 			if checkErr(t, err, tc.wantErr) {
-				if tc.notFound && !IsOwnedBundleNotFoundError(err) {
-					t.Fatalf("expected owned bundle not-found error, got %v", err)
-				}
+				assertOwnedBundleNotFound(t, err, tc.notFound)
 				return
 			}
 			if bundle.ID != tc.wantID {
 				t.Fatalf(fmtUnexpectedID, bundle.ID, tc.wantID)
 			}
 		})
+	}
+}
+
+func assertOwnedBundleNotFound(t *testing.T, err error, notFound bool) {
+	t.Helper()
+
+	if notFound && !IsOwnedBundleNotFoundError(err) {
+		t.Fatalf("expected owned bundle not-found error, got %v", err)
+	}
+}
+
+func assertOwnedBundlePayload(t *testing.T, r *http.Request) {
+	t.Helper()
+
+	var payload OwnedBundle
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		t.Errorf("failed to decode request body: %v", err)
+		return
+	}
+	if payload.Name != testOwnedBundleName || len(payload.Values) != 1 {
+		t.Errorf("unexpected payload: %+v", payload)
+		return
+	}
+	if owner := payload.Values[0].Owner; owner == nil || owner.ID != "1-1" {
+		t.Errorf("owner not sent: %+v", owner)
 	}
 }
 
@@ -144,17 +168,7 @@ func TestCreateAndUpdateOwnedBundle(t *testing.T) {
 				if r.URL.Path != tc.wantPath {
 					t.Errorf(fmtUnexpectedPath, r.URL.Path)
 				}
-
-				var payload OwnedBundle
-				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-					t.Errorf("failed to decode request body: %v", err)
-				}
-				if payload.Name != testOwnedBundleName || len(payload.Values) != 1 {
-					t.Errorf("unexpected payload: %+v", payload)
-				} else if owner := payload.Values[0].Owner; owner == nil || owner.ID != "1-1" {
-					t.Errorf("owner not sent: %+v", owner)
-				}
-
+				assertOwnedBundlePayload(t, r)
 				encodeJSON(t, w, testOwnedBundle())
 			})
 			defer server.Close()
@@ -205,5 +219,118 @@ func TestDeleteOwnedBundle(t *testing.T) {
 			err := client.DeleteOwnedBundle(context.Background(), testOwnedBundleID)
 			checkErr(t, err, tc.wantErr)
 		})
+	}
+}
+
+func TestOwnedBundleValueRequests(t *testing.T) {
+	t.Parallel()
+
+	const valueID = "49-1"
+	valuesPath := ownedBundleByIDTestURL + "/values"
+	description := "Server side"
+
+	tests := []struct {
+		name       string
+		wantMethod string
+		wantPath   string
+		wantBody   map[string]any
+		call       func(context.Context, *Client) error
+	}{
+		{
+			name:       "add value sends the element",
+			wantMethod: http.MethodPost,
+			wantPath:   valuesPath,
+			wantBody:   map[string]any{"name": "Backend", "owner": map[string]any{"id": "1-1"}},
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.AddOwnedBundleValue(ctx, testOwnedBundleID, OwnedBundleElement{Name: "Backend", Owner: &UserRef{ID: "1-1"}})
+				return err
+			},
+		},
+		{
+			name:       "update value clears owner and description with null",
+			wantMethod: http.MethodPost,
+			wantPath:   valuesPath + "/" + valueID,
+			wantBody:   map[string]any{"name": "Backend", "description": nil, "archived": false, "owner": nil},
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.UpdateOwnedBundleValue(ctx, testOwnedBundleID, valueID, OwnedBundleValueUpdate{Name: "Backend"})
+				return err
+			},
+		},
+		{
+			name:       "update value sends every set field",
+			wantMethod: http.MethodPost,
+			wantPath:   valuesPath + "/" + valueID,
+			wantBody: map[string]any{
+				"name": "Backend", "description": description, "archived": true, "ordinal": float64(3),
+				"owner": map[string]any{"id": "1-1"},
+			},
+			call: func(ctx context.Context, c *Client) error {
+				ordinal := 3
+				_, err := c.UpdateOwnedBundleValue(ctx, testOwnedBundleID, valueID, OwnedBundleValueUpdate{
+					Name: "Backend", Description: &description, Archived: true, Ordinal: &ordinal, Owner: &UserRef{ID: "1-1"},
+				})
+				return err
+			},
+		},
+		{
+			name:       "delete value",
+			wantMethod: http.MethodDelete,
+			wantPath:   valuesPath + "/" + valueID,
+			call: func(ctx context.Context, c *Client) error {
+				return c.DeleteOwnedBundleValue(ctx, testOwnedBundleID, valueID)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tc.wantMethod {
+					t.Errorf(errUnexpectedMethod, r.Method)
+				}
+				if r.URL.Path != tc.wantPath {
+					t.Errorf(fmtUnexpectedPath, r.URL.Path)
+				}
+				assertOwnedValueBody(t, r, tc.wantBody)
+				encodeJSON(t, w, OwnedBundleElement{ID: valueID, Name: "Backend"})
+			})
+			defer server.Close()
+
+			if err := tc.call(context.Background(), client); err != nil {
+				t.Fatalf(fmtUnexpectedError, err)
+			}
+		})
+	}
+}
+
+func assertOwnedValueBody(t *testing.T, r *http.Request, want map[string]any) {
+	t.Helper()
+
+	if want == nil {
+		return
+	}
+
+	var got map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		t.Errorf("failed to decode request body: %v", err)
+		return
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("unexpected body:\n got: %v\nwant: %v", got, want)
+	}
+}
+
+func TestDeleteOwnedBundleValueTreatsNotFoundAsDeleted(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	defer server.Close()
+
+	if err := client.DeleteOwnedBundleValue(context.Background(), testOwnedBundleID, "49-9"); err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
 	}
 }

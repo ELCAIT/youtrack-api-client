@@ -1,9 +1,12 @@
 package youtrack
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 )
 
 const (
@@ -11,9 +14,12 @@ const (
 	ownedBundleByIDPath    = "%s/%s/%s?%s"
 	ownedBundleFieldsPath  = pathWithFieldsFormat
 	ownedBundlePagePath    = "%s/%s?%s&$top=%d&$skip=%d"
-	ownedBundleFieldsParam = "fields=id,name,isUpdateable,values(id,name,description,archived,ordinal,owner(id,login,name,$type),$type),$type"
+	ownedBundleValueFields = "id,name,description,archived,ordinal,owner(id,login,name,$type),$type"
+	ownedBundleFieldsParam = "fields=id,name,isUpdateable,values(" + ownedBundleValueFields + "),$type"
+	ownedBundleValuesPath  = "values"
 	ownedBundlePageSize    = 100
 	errMarshalOwnedBundle  = "failed to marshal owned bundle: %w"
+	errMarshalOwnedValue   = "failed to marshal owned bundle value: %w"
 )
 
 var errOwnedBundleNotFound = fmt.Errorf("owned bundle %w", ErrNotFound)
@@ -30,6 +36,21 @@ type OwnedBundleElement struct {
 	// Owner is the user associated with the value. YouTrack allows it to be null.
 	Owner *UserRef `json:"owner,omitempty"`
 	Type  string   `json:"$type,omitempty"`
+}
+
+// OwnedBundleValueUpdate is the request body for UpdateOwnedBundleValue. It
+// replaces every field it carries: a nil Description or Owner is sent as null
+// and clears it, and Archived is always sent. Ordinal is only sent when set.
+//
+// A bundle-level update cannot do this: YouTrack ignores changes to values that
+// already exist when they arrive in UpdateOwnedBundle's values list, so edits to
+// an existing value have to go through this per-value endpoint.
+type OwnedBundleValueUpdate struct {
+	Name        string   `json:"name"`
+	Description *string  `json:"description"`
+	Archived    bool     `json:"archived"`
+	Ordinal     *int     `json:"ordinal,omitempty"`
+	Owner       *UserRef `json:"owner"`
 }
 
 // OwnedBundle represents a YouTrack owned field bundle.
@@ -139,4 +160,56 @@ func (c *Client) DeleteOwnedBundle(ctx context.Context, id string) error {
 		ErrCreate: "failed to create delete owned bundle request: %w",
 		ErrFetch:  "failed to delete owned bundle: %w",
 	})
+}
+
+// AddOwnedBundleValue adds a value to an owned field bundle.
+func (c *Client) AddOwnedBundleValue(ctx context.Context, bundleID string, value OwnedBundleElement) (*OwnedBundleElement, error) {
+	endpoint := c.buildURL(ownedBundlesAPIPath, []string{bundleID, ownedBundleValuesPath}, fieldsQuery(ownedBundleValueFields))
+	return c.postOwnedBundleValue(ctx, endpoint, value, "add")
+}
+
+// UpdateOwnedBundleValue replaces the fields of one value in an owned field bundle.
+func (c *Client) UpdateOwnedBundleValue(ctx context.Context, bundleID, valueID string, value OwnedBundleValueUpdate) (*OwnedBundleElement, error) {
+	endpoint := c.buildURL(ownedBundlesAPIPath, []string{bundleID, ownedBundleValuesPath, valueID}, fieldsQuery(ownedBundleValueFields))
+	return c.postOwnedBundleValue(ctx, endpoint, value, "update")
+}
+
+// DeleteOwnedBundleValue removes one value from an owned field bundle. A value
+// that is already gone is treated as deleted.
+func (c *Client) DeleteOwnedBundleValue(ctx context.Context, bundleID, valueID string) error {
+	endpoint := c.buildURL(ownedBundlesAPIPath, []string{bundleID, ownedBundleValuesPath, valueID}, nil)
+	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create delete owned bundle value request: %w", err)
+	}
+
+	if _, err := c.doRequest(req); err != nil && !IsNotFoundError(err) {
+		return fmt.Errorf("failed to delete owned bundle value: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Client) postOwnedBundleValue(ctx context.Context, endpoint string, payload any, action string) (*OwnedBundleElement, error) {
+	rb, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf(errMarshalOwnedValue, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, httpMethodPost, endpoint, bytes.NewReader(rb))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create %s owned bundle value request: %w", action, err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to %s owned bundle value: %w", action, err)
+	}
+
+	var value OwnedBundleElement
+	if err := json.Unmarshal(body, &value); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %s owned bundle value response: %w", action, err)
+	}
+
+	return &value, nil
 }
