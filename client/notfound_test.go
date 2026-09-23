@@ -196,7 +196,7 @@ func TestTypedPredicatesDoNotCrossTalk(t *testing.T) {
 		t.Error("IsAppNotFoundError matched a generic not-found error")
 	}
 	// The shared predicate must still match all of them.
-	for _, err := range []error{appErr, genericErr, errCustomFieldNotFound, errEnumBundleNotFound, errStateBundleNotFound} {
+	for _, err := range []error{appErr, genericErr, errCustomFieldNotFound, errEnumBundleNotFound, errStateBundleNotFound, errOwnedBundleNotFound} {
 		if !IsNotFound(err) {
 			t.Errorf("IsNotFound returned false for %v", err)
 		}
@@ -217,6 +217,7 @@ func TestTypedNotFoundPredicates(t *testing.T) {
 		{name: "IsCustomFieldNotFoundError", predicate: IsCustomFieldNotFoundError, err: fmt.Errorf("%w: %s", errCustomFieldNotFound, "x")},
 		{name: "IsEnumBundleNotFoundError", predicate: IsEnumBundleNotFoundError, err: fmt.Errorf("%w: name '%s'", errEnumBundleNotFound, "x")},
 		{name: "IsStateBundleNotFoundError", predicate: IsStateBundleNotFoundError, err: fmt.Errorf("%w: name '%s'", errStateBundleNotFound, "x")},
+		{name: "IsOwnedBundleNotFoundError", predicate: IsOwnedBundleNotFoundError, err: fmt.Errorf("%w: name '%s'", errOwnedBundleNotFound, "x")},
 	}
 
 	for _, tc := range tests {

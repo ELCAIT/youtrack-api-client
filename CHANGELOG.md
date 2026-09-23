@@ -1,3 +1,11 @@
+## 1.10.0
+FEATURES:
+- Add owned field bundle support (`api/admin/customFieldSettings/bundles/ownedField`):
+  `GetOwnedBundleByID`, `GetOwnedBundleByName`, `CreateOwnedBundle`, `UpdateOwnedBundle`,
+  `DeleteOwnedBundle` and `IsOwnedBundleNotFoundError`, mirroring the enum and state bundle
+  methods. `OwnedBundleElement` carries the value's optional `Owner` as a `*UserRef`; it has
+  no localized name, since YouTrack models owned values as plain `BundleElement`s.
+
 ## 1.9.0
 FEATURES:
 - `UserDetail` now carries the identity's **email**, as `*DetailEmail`. Hub models the
