@@ -3,8 +3,8 @@ package youtrack
 import (
 	"bytes"
 	"context"
-
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -50,13 +50,6 @@ type updateConfig struct {
 	ErrCreate  string
 	ErrFetch   string
 	ErrDecode  string
-}
-
-type deleteConfig struct {
-	HostURL   string
-	APIPath   string
-	ErrCreate string
-	ErrFetch  string
 }
 
 // lookupByNamePaginated pages through all results looking for an exact match on
@@ -235,25 +228,46 @@ func updateAndDecode[T any](
 	return &item, nil
 }
 
-func deleteByID(
-	ctx context.Context,
-	client *Client,
-	id string,
-	cfg deleteConfig,
-) error {
-	req, err := http.NewRequestWithContext(ctx, httpMethodDelete,
-		fmt.Sprintf("%s/%s/%s", cfg.HostURL, cfg.APIPath, id), nil)
-	if err != nil {
-		return fmt.Errorf(cfg.ErrCreate, err)
+// bundleInUseMarkers are the phrases YouTrack uses when it refuses to delete a
+// bundle because something still references it.
+var bundleInUseMarkers = []string{"has usages", "because it is referenced"}
+
+// deleteBundleByID deletes a bundle, retrying while YouTrack reports it as
+// still in use.
+//
+// Removing the last field that uses a bundle is acknowledged before YouTrack
+// drops the reference, so deleting the bundle straight after — as Terraform
+// does when it destroys a project field and its bundle together — can be
+// refused with "This bundle has usages". The delete is retried within the async
+// poll budget; a bundle that is genuinely still in use fails with that error
+// once the budget runs out.
+func deleteBundleByID(ctx context.Context, client *Client, id string, cfg deleteConfig) error {
+	var lastErr error
+
+	attempt := func(attemptCtx context.Context) bool {
+		lastErr = deleteByID(attemptCtx, client, id, cfg)
+		return !isBundleInUseError(lastErr)
 	}
 
-	_, err = client.doRequest(req)
-	if err != nil {
-		if IsNotFoundError(err) {
-			return nil
+	if err := awaitAsyncProcessing(ctx, attempt); err != nil {
+		return err
+	}
+
+	return lastErr
+}
+
+func isBundleInUseError(err error) bool {
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+
+	message := strings.ToLower(httpErr.Message)
+	for _, marker := range bundleInUseMarkers {
+		if strings.Contains(message, marker) {
+			return true
 		}
-		return fmt.Errorf(cfg.ErrFetch, err)
 	}
 
-	return nil
+	return false
 }

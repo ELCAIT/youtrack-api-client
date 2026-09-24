@@ -1,6 +1,8 @@
 package youtrack
 
 import (
+	"context"
+	"net/http"
 	"net/url"
 	"testing"
 )
@@ -132,6 +134,44 @@ func TestPaginatedQuery(t *testing.T) {
 			if got := paginatedQuery("id", tt.top, tt.skip).Encode(); got != tt.want {
 				t.Errorf("paginatedQuery = %q, want %q", got, tt.want)
 			}
+		})
+	}
+}
+
+// TestDeleteByID checks the ID is sent as a single escaped path segment and
+// that deleting an already absent resource succeeds.
+func TestDeleteByID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		id       string
+		status   int
+		wantPath string
+		wantErr  bool
+	}{
+		{name: "deleted", id: "151-1", status: http.StatusOK, wantPath: "/" + customFieldsAPIPath + "/151-1"},
+		{name: "id is escaped", id: "151-1/../x?y#z", status: http.StatusOK, wantPath: "/" + customFieldsAPIPath + "/151-1%2F..%2Fx%3Fy%23z"},
+		{name: "already gone", id: "151-1", status: http.StatusNotFound, wantPath: "/" + customFieldsAPIPath + "/151-1"},
+		{name: "server error", id: "151-1", status: http.StatusInternalServerError, wantPath: "/" + customFieldsAPIPath + "/151-1", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodDelete {
+					t.Errorf(errUnexpectedMethod, r.Method)
+				}
+				if r.URL.EscapedPath() != tc.wantPath {
+					t.Errorf(fmtUnexpectedEndpointPath, r.URL.EscapedPath(), tc.wantPath)
+				}
+				w.WriteHeader(tc.status)
+			})
+			defer server.Close()
+
+			checkErr(t, client.DeleteCustomField(context.Background(), tc.id), tc.wantErr)
 		})
 	}
 }

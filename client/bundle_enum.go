@@ -11,7 +11,8 @@ const (
 	enumBundleByIDPath    = "%s/%s/%s?%s"
 	enumBundleFieldsPath  = pathWithFieldsFormat
 	enumBundlePagePath    = "%s/%s?%s&$top=%d&$skip=%d"
-	enumBundleFieldsParam = "fields=id,name,isUpdateable,values(id,name,localizedName,description,archived,ordinal),$type"
+	enumBundleValueFields = "id,name,localizedName,description,archived,ordinal,$type"
+	enumBundleFieldsParam = "fields=id,name,isUpdateable,values(" + enumBundleValueFields + "),$type"
 	enumBundlePageSize    = 100
 	errMarshalEnumBundle  = "failed to marshal enum bundle: %w"
 )
@@ -27,6 +28,18 @@ type EnumBundleElement struct {
 	Archived      bool   `json:"archived,omitempty"`
 	Ordinal       int    `json:"ordinal,omitempty"`
 	Type          string `json:"$type,omitempty"`
+}
+
+// EnumBundleValueUpdate is the request body for ReplaceEnumBundleValue. It
+// replaces every field it carries: a nil LocalizedName or Description is sent
+// as null and clears it, and Archived is always sent. Ordinal is only
+// sent when set.
+type EnumBundleValueUpdate struct {
+	Name          string  `json:"name"`
+	LocalizedName *string `json:"localizedName"`
+	Description   *string `json:"description"`
+	Archived      bool    `json:"archived"`
+	Ordinal       *int    `json:"ordinal,omitempty"`
 }
 
 // EnumBundle represents a YouTrack enum bundle.
@@ -129,11 +142,37 @@ func (c *Client) UpdateEnumBundle(ctx context.Context, id string, bundle EnumBun
 }
 
 // DeleteEnumBundle deletes an enum bundle by ID.
+// While YouTrack still reports the bundle as in use, shortly after the last
+// field using it was removed, the delete is retried.
 func (c *Client) DeleteEnumBundle(ctx context.Context, id string) error {
-	return deleteByID(ctx, c, id, deleteConfig{
-		HostURL:   c.HostURL,
+	return deleteBundleByID(ctx, c, id, deleteConfig{
 		APIPath:   enumBundlesAPIPath,
 		ErrCreate: "failed to create delete enum bundle request: %w",
 		ErrFetch:  "failed to delete enum bundle: %w",
+	})
+}
+
+var enumBundleValues = bundleValueEndpoint{APIPath: enumBundlesAPIPath, Fields: enumBundleValueFields, Kind: "enum"}
+
+// AddEnumBundleValue adds a value to an enum bundle.
+func (c *Client) AddEnumBundleValue(ctx context.Context, bundleID string, value EnumBundleElement) (*EnumBundleElement, error) {
+	return addBundleValue[EnumBundleElement](ctx, c, enumBundleValues, bundleID, value)
+}
+
+// ReplaceEnumBundleValue replaces the fields of one value in an enum bundle.
+func (c *Client) ReplaceEnumBundleValue(ctx context.Context, bundleID, valueID string, value EnumBundleValueUpdate) (*EnumBundleElement, error) {
+	return replaceBundleValue[EnumBundleElement](ctx, c, enumBundleValues, bundleID, valueID, value)
+}
+
+// DeleteEnumBundleValue removes one value from an enum bundle, waiting until
+// YouTrack no longer lists it. A value that is already gone is treated as
+// deleted.
+func (c *Client) DeleteEnumBundleValue(ctx context.Context, bundleID, valueID string) error {
+	return deleteBundleValue(ctx, c, enumBundleValues, bundleID, valueID, func(ctx context.Context) (bool, error) {
+		bundle, err := c.GetEnumBundleByID(ctx, bundleID)
+		if err != nil {
+			return false, err
+		}
+		return bundleListsValue(bundle.Values, valueID, func(v EnumBundleElement) string { return v.ID }), nil
 	})
 }

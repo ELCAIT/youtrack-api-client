@@ -285,7 +285,6 @@ func (c *Client) UpdateYoutrackRole(ctx context.Context, role Role) (*Role, erro
 // DeleteYoutrackRole deletes a role via the YouTrack API.
 func (c *Client) DeleteYoutrackRole(ctx context.Context, roleId string) error {
 	return deleteByID(ctx, c, roleId, deleteConfig{
-		HostURL:   c.HostURL,
 		APIPath:   youtrackRolesAPIPath,
 		ErrCreate: "failed to create delete role request: %w",
 		ErrFetch:  "failed to delete role: %w",
