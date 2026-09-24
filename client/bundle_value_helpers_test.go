@@ -94,6 +94,28 @@ func TestEnumAndStateBundleValueRequests(t *testing.T) {
 	}
 }
 
+// bundleValueDeleteHandler serves the value delete, then the bundle reads that
+// follow it: the first read still lists the value, as YouTrack does right after
+// acknowledging the delete, and later reads no longer do.
+func bundleValueDeleteHandler(t *testing.T, apiPath string, listed, gone any, reads *atomic.Int32) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			if r.URL.Path != "/"+apiPath+"/"+testBundleID+"/values/"+testBundleValueID {
+				t.Errorf(fmtUnexpectedPath, r.URL.Path)
+			}
+		case http.MethodGet:
+			if reads.Add(1) == 1 {
+				encodeJSON(t, w, listed)
+				return
+			}
+			encodeJSON(t, w, gone)
+		default:
+			t.Errorf(errUnexpectedMethod, r.Method)
+		}
+	}
+}
+
 // TestEnumAndStateBundleValueDeleteWaitsUntilGone covers YouTrack
 // acknowledging a value delete before applying it.
 func TestEnumAndStateBundleValueDeleteWaitsUntilGone(t *testing.T) {
@@ -102,18 +124,15 @@ func TestEnumAndStateBundleValueDeleteWaitsUntilGone(t *testing.T) {
 	tests := []struct {
 		name    string
 		apiPath string
-		bundle  func(listed bool) any
+		listed  any
+		gone    any
 		remove  func(context.Context, *Client) error
 	}{
 		{
 			name:    "enum",
 			apiPath: enumBundlesAPIPath,
-			bundle: func(listed bool) any {
-				if listed {
-					return EnumBundle{ID: testBundleID, Values: []EnumBundleElement{{ID: testBundleValueID}}}
-				}
-				return EnumBundle{ID: testBundleID}
-			},
+			listed:  EnumBundle{ID: testBundleID, Values: []EnumBundleElement{{ID: testBundleValueID}}},
+			gone:    EnumBundle{ID: testBundleID},
 			remove: func(ctx context.Context, c *Client) error {
 				return c.DeleteEnumBundleValue(ctx, testBundleID, testBundleValueID)
 			},
@@ -121,12 +140,8 @@ func TestEnumAndStateBundleValueDeleteWaitsUntilGone(t *testing.T) {
 		{
 			name:    "state",
 			apiPath: stateBundlesAPIPath,
-			bundle: func(listed bool) any {
-				if listed {
-					return StateBundle{ID: testBundleID, Values: []StateBundleElement{{ID: testBundleValueID}}}
-				}
-				return StateBundle{ID: testBundleID}
-			},
+			listed:  StateBundle{ID: testBundleID, Values: []StateBundleElement{{ID: testBundleValueID}}},
+			gone:    StateBundle{ID: testBundleID},
 			remove: func(ctx context.Context, c *Client) error {
 				return c.DeleteStateBundleValue(ctx, testBundleID, testBundleValueID)
 			},
@@ -138,18 +153,7 @@ func TestEnumAndStateBundleValueDeleteWaitsUntilGone(t *testing.T) {
 			t.Parallel()
 
 			var reads atomic.Int32
-			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				switch r.Method {
-				case http.MethodDelete:
-					if want := "/" + tc.apiPath + "/" + testBundleID + "/values/" + testBundleValueID; r.URL.Path != want {
-						t.Errorf(fmtUnexpectedPath, r.URL.Path)
-					}
-				case http.MethodGet:
-					encodeJSON(t, w, tc.bundle(reads.Add(1) == 1))
-				default:
-					t.Errorf(errUnexpectedMethod, r.Method)
-				}
-			})
+			client, server := newTestClient(t, bundleValueDeleteHandler(t, tc.apiPath, tc.listed, tc.gone, &reads))
 			defer server.Close()
 
 			if err := tc.remove(context.Background(), client); err != nil {
@@ -159,6 +163,24 @@ func TestEnumAndStateBundleValueDeleteWaitsUntilGone(t *testing.T) {
 				t.Fatalf("expected 2 reads before the value was gone, got %d", got)
 			}
 		})
+	}
+}
+
+// sequencedDeleteHandler answers the nth delete with the nth status, repeating
+// the last one once they run out, and sends body with every non-OK status.
+func sequencedDeleteHandler(t *testing.T, responses []int, body string, calls *atomic.Int32) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf(errUnexpectedMethod, r.Method)
+		}
+		status := responses[len(responses)-1]
+		if n := int(calls.Add(1)); n <= len(responses) {
+			status = responses[n-1]
+		}
+		w.WriteHeader(status)
+		if status != http.StatusOK {
+			_, _ = w.Write([]byte(body))
+		}
 	}
 }
 
@@ -183,19 +205,7 @@ func TestDeleteBundleRetriesWhileInUse(t *testing.T) {
 			t.Parallel()
 
 			var calls atomic.Int32
-			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodDelete {
-					t.Errorf(errUnexpectedMethod, r.Method)
-				}
-				status := tc.responses[len(tc.responses)-1]
-				if n := int(calls.Add(1)); n <= len(tc.responses) {
-					status = tc.responses[n-1]
-				}
-				w.WriteHeader(status)
-				if status != http.StatusOK {
-					_, _ = w.Write([]byte(tc.body))
-				}
-			})
+			client, server := newTestClient(t, sequencedDeleteHandler(t, tc.responses, tc.body, &calls))
 			defer server.Close()
 
 			err := client.DeleteOwnedBundle(context.Background(), testBundleID)
