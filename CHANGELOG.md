@@ -5,12 +5,30 @@ FEATURES:
   `DeleteOwnedBundle` and `IsOwnedBundleNotFoundError`, mirroring the enum and state bundle
   methods. `OwnedBundleElement` carries the value's optional `Owner` as a `*UserRef`; it has
   no localized name, since YouTrack models owned values as plain `BundleElement`s.
-- Add `AddOwnedBundleValue`, `UpdateOwnedBundleValue` and `DeleteOwnedBundleValue` for editing
-  one value of an owned bundle. YouTrack ignores changes to values that already exist when they
-  arrive in `UpdateOwnedBundle`'s values list, so renaming, archiving or re-owning a value has to
-  go through the per-value endpoint. `UpdateOwnedBundleValue` takes an `OwnedBundleValueUpdate`,
-  which replaces every field it carries: a nil `Owner` or `Description` is sent as `null` and
-  clears it.
+- Add per-value methods for every bundle kind: `AddEnumBundleValue`, `ReplaceEnumBundleValue`,
+  `DeleteEnumBundleValue`, and the same for state (`…StateBundleValue`) and owned
+  (`…OwnedBundleValue`) bundles. A bundle-level update cannot edit values safely: YouTrack ignores
+  changes to existing values sent in its values list, and deletes and recreates, under a new ID,
+  any value sent there without its ID, which clears that value on every issue that used it.
+  - `Replace…BundleValue` takes an `EnumBundleValueUpdate`, `StateBundleValueUpdate` or
+    `OwnedBundleValueUpdate`, which replaces every field it carries: a nil `LocalizedName`,
+    `Description` or `Owner` is sent as `null` and clears it.
+  - `Delete…BundleValue` waits until the value is gone: YouTrack acknowledges the delete before
+    applying it, and deleting the bundle in that window fails with "because it is referenced".
+  - The existing `UpdateStateBundleValue` is unchanged.
+- Add period custom field support: `PeriodFieldTypeID` (`period`) and
+  `PeriodProjectCustomFieldType` (`PeriodProjectCustomField`). A period field has no bundle, so
+  the generic custom field and project custom field methods manage it; its field defaults are a
+  plain `CustomFieldDefaults`. Attaching it to a project requires the `$type`, and YouTrack
+  silently drops any `defaultValues` sent with it. It can be used as a project's time tracking
+  estimate.
+
+IMPROVEMENTS:
+- `DeleteEnumBundle`, `DeleteStateBundle` and `DeleteOwnedBundle` retry, within the async poll
+  budget, while YouTrack refuses the delete because the bundle still has usages. Removing the last
+  field that uses a bundle is acknowledged before YouTrack drops the reference, so deleting the
+  bundle straight after — as Terraform does when it destroys a project field and its bundle
+  together — could fail with "This bundle has usages".
 
 ## 1.9.0
 FEATURES:

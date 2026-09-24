@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"sync/atomic"
 	"testing"
 )
 
@@ -252,7 +253,7 @@ func TestOwnedBundleValueRequests(t *testing.T) {
 			wantPath:   valuesPath + "/" + valueID,
 			wantBody:   map[string]any{"name": "Backend", "description": nil, "archived": false, "owner": nil},
 			call: func(ctx context.Context, c *Client) error {
-				_, err := c.UpdateOwnedBundleValue(ctx, testOwnedBundleID, valueID, OwnedBundleValueUpdate{Name: "Backend"})
+				_, err := c.ReplaceOwnedBundleValue(ctx, testOwnedBundleID, valueID, OwnedBundleValueUpdate{Name: "Backend"})
 				return err
 			},
 		},
@@ -266,18 +267,10 @@ func TestOwnedBundleValueRequests(t *testing.T) {
 			},
 			call: func(ctx context.Context, c *Client) error {
 				ordinal := 3
-				_, err := c.UpdateOwnedBundleValue(ctx, testOwnedBundleID, valueID, OwnedBundleValueUpdate{
+				_, err := c.ReplaceOwnedBundleValue(ctx, testOwnedBundleID, valueID, OwnedBundleValueUpdate{
 					Name: "Backend", Description: &description, Archived: true, Ordinal: &ordinal, Owner: &UserRef{ID: "1-1"},
 				})
 				return err
-			},
-		},
-		{
-			name:       "delete value",
-			wantMethod: http.MethodDelete,
-			wantPath:   valuesPath + "/" + valueID,
-			call: func(ctx context.Context, c *Client) error {
-				return c.DeleteOwnedBundleValue(ctx, testOwnedBundleID, valueID)
 			},
 		},
 	}
@@ -293,7 +286,7 @@ func TestOwnedBundleValueRequests(t *testing.T) {
 				if r.URL.Path != tc.wantPath {
 					t.Errorf(fmtUnexpectedPath, r.URL.Path)
 				}
-				assertOwnedValueBody(t, r, tc.wantBody)
+				assertJSONBody(t, r, tc.wantBody)
 				encodeJSON(t, w, OwnedBundleElement{ID: valueID, Name: "Backend"})
 			})
 			defer server.Close()
@@ -305,7 +298,7 @@ func TestOwnedBundleValueRequests(t *testing.T) {
 	}
 }
 
-func assertOwnedValueBody(t *testing.T, r *http.Request, want map[string]any) {
+func assertJSONBody(t *testing.T, r *http.Request, want map[string]any) {
 	t.Helper()
 
 	if want == nil {
@@ -332,5 +325,40 @@ func TestDeleteOwnedBundleValueTreatsNotFoundAsDeleted(t *testing.T) {
 
 	if err := client.DeleteOwnedBundleValue(context.Background(), testOwnedBundleID, "49-9"); err != nil {
 		t.Fatalf(fmtUnexpectedError, err)
+	}
+}
+
+// TestDeleteOwnedBundleValueWaitsUntilGone covers YouTrack acknowledging a value
+// delete before applying it: the delete must not return while a read still
+// lists the value.
+func TestDeleteOwnedBundleValueWaitsUntilGone(t *testing.T) {
+	t.Parallel()
+
+	const valueID = "49-1"
+	var reads atomic.Int32
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			if r.URL.Path != ownedBundleByIDTestURL+"/values/"+valueID {
+				t.Errorf(fmtUnexpectedPath, r.URL.Path)
+			}
+		case http.MethodGet:
+			bundle := testOwnedBundle()
+			if reads.Add(1) > 1 {
+				bundle.Values = bundle.Values[1:]
+			}
+			encodeJSON(t, w, bundle)
+		default:
+			t.Errorf(errUnexpectedMethod, r.Method)
+		}
+	})
+	defer server.Close()
+
+	if err := client.DeleteOwnedBundleValue(context.Background(), testOwnedBundleID, valueID); err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	if got := reads.Load(); got != 2 {
+		t.Fatalf("expected 2 reads before the value was gone, got %d", got)
 	}
 }

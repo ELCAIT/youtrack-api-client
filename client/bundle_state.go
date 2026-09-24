@@ -15,7 +15,8 @@ const (
 	stateBundleByIDPath      = "%s/%s/%s?%s"
 	stateBundleFieldsPath    = pathWithFieldsFormat
 	stateBundlePagePath      = "%s/%s?%s&$top=%d&$skip=%d"
-	stateBundleFieldsParam   = "fields=id,name,isUpdateable,values(id,name,localizedName,description,isResolved,archived,ordinal),$type"
+	stateBundleValueFields   = "id,name,localizedName,description,isResolved,archived,ordinal,$type"
+	stateBundleFieldsParam   = "fields=id,name,isUpdateable,values(" + stateBundleValueFields + "),$type"
 	stateBundlePageSize      = 100
 	errMarshalStateBundle    = "failed to marshal state bundle: %w"
 	errMarshalStateBundleVal = "failed to marshal state bundle value: %w"
@@ -33,6 +34,19 @@ type StateBundleElement struct {
 	Archived      bool   `json:"archived,omitempty"`
 	Ordinal       int    `json:"ordinal,omitempty"`
 	Type          string `json:"$type,omitempty"`
+}
+
+// StateBundleValueUpdate is the request body for ReplaceStateBundleValue. It
+// replaces every field it carries: a nil LocalizedName or Description is sent
+// as null and clears it, and Archived is always sent. IsResolved is always sent too. Ordinal is only
+// sent when set.
+type StateBundleValueUpdate struct {
+	Name          string  `json:"name"`
+	LocalizedName *string `json:"localizedName"`
+	Description   *string `json:"description"`
+	IsResolved    bool    `json:"isResolved"`
+	Archived      bool    `json:"archived"`
+	Ordinal       *int    `json:"ordinal,omitempty"`
 }
 
 // StateBundle represents a YouTrack state bundle.
@@ -135,8 +149,10 @@ func (c *Client) UpdateStateBundle(ctx context.Context, id string, bundle StateB
 }
 
 // DeleteStateBundle deletes a state bundle by ID.
+// While YouTrack still reports the bundle as in use, shortly after the last
+// field using it was removed, the delete is retried.
 func (c *Client) DeleteStateBundle(ctx context.Context, id string) error {
-	return deleteByID(ctx, c, id, deleteConfig{
+	return deleteBundleByID(ctx, c, id, deleteConfig{
 		HostURL:   c.HostURL,
 		APIPath:   stateBundlesAPIPath,
 		ErrCreate: "failed to create delete state bundle request: %w",
@@ -168,4 +184,29 @@ func (c *Client) UpdateStateBundleValue(ctx context.Context, bundleID, elementID
 	}
 
 	return &updated, nil
+}
+
+var stateBundleValues = bundleValueEndpoint{APIPath: stateBundlesAPIPath, Fields: stateBundleValueFields, Kind: "state"}
+
+// AddStateBundleValue adds a value to a state bundle.
+func (c *Client) AddStateBundleValue(ctx context.Context, bundleID string, value StateBundleElement) (*StateBundleElement, error) {
+	return addBundleValue[StateBundleElement](ctx, c, stateBundleValues, bundleID, value)
+}
+
+// ReplaceStateBundleValue replaces the fields of one value in a state bundle.
+func (c *Client) ReplaceStateBundleValue(ctx context.Context, bundleID, valueID string, value StateBundleValueUpdate) (*StateBundleElement, error) {
+	return replaceBundleValue[StateBundleElement](ctx, c, stateBundleValues, bundleID, valueID, value)
+}
+
+// DeleteStateBundleValue removes one value from a state bundle, waiting until
+// YouTrack no longer lists it. A value that is already gone is treated as
+// deleted.
+func (c *Client) DeleteStateBundleValue(ctx context.Context, bundleID, valueID string) error {
+	return deleteBundleValue(ctx, c, stateBundleValues, bundleID, valueID, func(ctx context.Context) (bool, error) {
+		bundle, err := c.GetStateBundleByID(ctx, bundleID)
+		if err != nil {
+			return false, err
+		}
+		return bundleListsValue(bundle.Values, valueID, func(v StateBundleElement) string { return v.ID }), nil
+	})
 }

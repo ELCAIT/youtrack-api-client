@@ -3,8 +3,8 @@ package youtrack
 import (
 	"bytes"
 	"context"
-
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -256,4 +256,48 @@ func deleteByID(
 	}
 
 	return nil
+}
+
+// bundleInUseMarkers are the phrases YouTrack uses when it refuses to delete a
+// bundle because something still references it.
+var bundleInUseMarkers = []string{"has usages", "because it is referenced"}
+
+// deleteBundleByID deletes a bundle, retrying while YouTrack reports it as
+// still in use.
+//
+// Removing the last field that uses a bundle is acknowledged before YouTrack
+// drops the reference, so deleting the bundle straight after — as Terraform
+// does when it destroys a project field and its bundle together — can be
+// refused with "This bundle has usages". The delete is retried within the async
+// poll budget; a bundle that is genuinely still in use fails with that error
+// once the budget runs out.
+func deleteBundleByID(ctx context.Context, client *Client, id string, cfg deleteConfig) error {
+	var lastErr error
+
+	attempt := func(attemptCtx context.Context) bool {
+		lastErr = deleteByID(attemptCtx, client, id, cfg)
+		return !isBundleInUseError(lastErr)
+	}
+
+	if err := awaitAsyncProcessing(ctx, attempt); err != nil {
+		return err
+	}
+
+	return lastErr
+}
+
+func isBundleInUseError(err error) bool {
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+
+	message := strings.ToLower(httpErr.Message)
+	for _, marker := range bundleInUseMarkers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+
+	return false
 }

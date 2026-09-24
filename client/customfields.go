@@ -24,6 +24,20 @@ const (
 	errMarshalCustomField = "failed to marshal custom field: %w"
 )
 
+// Period custom fields hold a duration (an estimate, time spent) and are not
+// backed by a bundle: their field defaults are plain CustomFieldDefaults with
+// no bundle and no default values, so the generic custom field methods manage
+// them as they are.
+const (
+	// PeriodFieldTypeID is the FieldType ID of a period custom field.
+	PeriodFieldTypeID = "period"
+	// PeriodProjectCustomFieldType is the $type a period field must carry when
+	// it is attached to a project; YouTrack rejects the attachment without it.
+	// The attachment has no bundle, and YouTrack silently drops any
+	// defaultValues sent with it.
+	PeriodProjectCustomFieldType = "PeriodProjectCustomField"
+)
+
 var errCustomFieldNotFound = fmt.Errorf("custom field %w", ErrNotFound)
 
 // FieldType represents a YouTrack custom field type descriptor.
