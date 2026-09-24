@@ -206,7 +206,6 @@ func (c *Client) UpdateCustomField(ctx context.Context, id string, customField C
 // DeleteCustomField deletes a custom field by ID.
 func (c *Client) DeleteCustomField(ctx context.Context, id string) error {
 	return deleteByID(ctx, c, id, deleteConfig{
-		HostURL:   c.HostURL,
 		APIPath:   customFieldsAPIPath,
 		ErrCreate: "failed to create delete custom field request: %w",
 		ErrFetch:  "failed to delete custom field: %w",

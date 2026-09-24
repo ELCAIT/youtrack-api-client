@@ -24,6 +24,11 @@ IMPROVEMENTS:
   bundle straight after — as Terraform does when it destroys a project field and its bundle
   together — could fail with "This bundle has usages".
 
+FIXES:
+- `DeleteCustomField`, `DeleteIssueLinkType`, `DeleteYoutrackRole` and the enum, state and owned
+  bundle deletes now escape the ID they put in the request path. An ID containing `/`, `?` or `#`
+  previously addressed a different endpoint instead of the resource it named.
+
 ## 1.9.0
 FEATURES:
 - `UserDetail` now carries the identity's **email**, as `*DetailEmail`. Hub models the

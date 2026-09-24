@@ -153,7 +153,6 @@ func (c *Client) UpdateStateBundle(ctx context.Context, id string, bundle StateB
 // field using it was removed, the delete is retried.
 func (c *Client) DeleteStateBundle(ctx context.Context, id string) error {
 	return deleteBundleByID(ctx, c, id, deleteConfig{
-		HostURL:   c.HostURL,
 		APIPath:   stateBundlesAPIPath,
 		ErrCreate: "failed to create delete state bundle request: %w",
 		ErrFetch:  "failed to delete state bundle: %w",

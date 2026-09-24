@@ -410,6 +410,37 @@ func (c *Client) doRequest(req *http.Request) ([]byte, error) {
 	return body, nil
 }
 
+type deleteConfig struct {
+	APIPath   string
+	ErrCreate string
+	ErrFetch  string
+}
+
+// deleteByID deletes the resource with the given ID under cfg.APIPath. A 404
+// is treated as success, so deleting a resource twice is safe. The ID is
+// escaped, so one containing "/", "?" or "#" cannot address another endpoint.
+func deleteByID(
+	ctx context.Context,
+	client *Client,
+	id string,
+	cfg deleteConfig,
+) error {
+	req, err := http.NewRequestWithContext(ctx, httpMethodDelete, client.buildURL(cfg.APIPath, []string{id}, nil), nil)
+	if err != nil {
+		return fmt.Errorf(cfg.ErrCreate, err)
+	}
+
+	_, err = client.doRequest(req)
+	if err != nil {
+		if IsNotFoundError(err) {
+			return nil
+		}
+		return fmt.Errorf(cfg.ErrFetch, err)
+	}
+
+	return nil
+}
+
 // logRequest records a completed request. Bodies are deliberately omitted:
 // they carry tokens, passwords, and app settings.
 func (c *Client) logRequest(req *http.Request, res *http.Response, started time.Time) {

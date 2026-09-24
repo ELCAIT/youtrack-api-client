@@ -146,7 +146,6 @@ func (c *Client) UpdateEnumBundle(ctx context.Context, id string, bundle EnumBun
 // field using it was removed, the delete is retried.
 func (c *Client) DeleteEnumBundle(ctx context.Context, id string) error {
 	return deleteBundleByID(ctx, c, id, deleteConfig{
-		HostURL:   c.HostURL,
 		APIPath:   enumBundlesAPIPath,
 		ErrCreate: "failed to create delete enum bundle request: %w",
 		ErrFetch:  "failed to delete enum bundle: %w",

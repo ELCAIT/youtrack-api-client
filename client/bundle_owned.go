@@ -148,7 +148,6 @@ func (c *Client) UpdateOwnedBundle(ctx context.Context, id string, bundle OwnedB
 // field using it was removed, the delete is retried.
 func (c *Client) DeleteOwnedBundle(ctx context.Context, id string) error {
 	return deleteBundleByID(ctx, c, id, deleteConfig{
-		HostURL:   c.HostURL,
 		APIPath:   ownedBundlesAPIPath,
 		ErrCreate: "failed to create delete owned bundle request: %w",
 		ErrFetch:  "failed to delete owned bundle: %w",
