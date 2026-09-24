@@ -16,12 +16,6 @@ FEATURES:
   - `Delete…BundleValue` waits until the value is gone: YouTrack acknowledges the delete before
     applying it, and deleting the bundle in that window fails with "because it is referenced".
   - The existing `UpdateStateBundleValue` is unchanged.
-- Add period custom field support: `PeriodFieldTypeID` (`period`) and
-  `PeriodProjectCustomFieldType` (`PeriodProjectCustomField`). A period field has no bundle, so
-  the generic custom field and project custom field methods manage it; its field defaults are a
-  plain `CustomFieldDefaults`. Attaching it to a project requires the `$type`, and YouTrack
-  silently drops any `defaultValues` sent with it. It can be used as a project's time tracking
-  estimate.
 
 IMPROVEMENTS:
 - `DeleteEnumBundle`, `DeleteStateBundle` and `DeleteOwnedBundle` retry, within the async poll
