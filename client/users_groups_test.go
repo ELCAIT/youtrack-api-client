@@ -534,15 +534,7 @@ func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bo
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
-				encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
-				return
-			}
-			if reads.Add(1) <= readsBeforeGone {
-				encodeJSON(t, w, User{ID: testUserID})
-				return
-			}
-			w.WriteHeader(http.StatusNotFound)
+			serveDeleteUserRead(t, w, r, func() bool { return reads.Add(1) <= readsBeforeGone })
 			return
 		}
 
@@ -551,15 +543,36 @@ func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bo
 		}
 
 		if validateDeleteRequest {
-			if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
-				t.Fatalf("unexpected path: %s", r.URL.Path)
-			}
-			if r.URL.Query().Get("successor") == "" {
-				t.Fatal("expected successor query parameter")
-			}
+			assertDeleteUserRequest(t, r)
 		}
 
 		w.WriteHeader(statusCode)
+	}
+}
+
+// serveDeleteUserRead answers the guest successor lookup, and the read-back of
+// the deleted user with the user while stillPresent reports true, then with 404.
+func serveDeleteUserRead(t *testing.T, w http.ResponseWriter, r *http.Request, stillPresent func() bool) {
+	t.Helper()
+
+	switch {
+	case !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID):
+		encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
+	case stillPresent():
+		encodeJSON(t, w, User{ID: testUserID})
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func assertDeleteUserRequest(t *testing.T, r *http.Request) {
+	t.Helper()
+
+	if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
+		t.Fatalf("unexpected path: %s", r.URL.Path)
+	}
+	if r.URL.Query().Get("successor") == "" {
+		t.Fatal("expected successor query parameter")
 	}
 }
 
