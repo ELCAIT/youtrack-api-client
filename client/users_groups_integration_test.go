@@ -278,6 +278,51 @@ func TestIntegrationYouTrackGroupLifecycle(t *testing.T) {
 	createdGroup = nil
 }
 
+// TestIntegrationYouTrackUserLifecycle covers what a declarative caller needs from a
+// user: the id CreateUser returns can be read back directly, the read carries every
+// writable field, and the user is gone (404) after DeleteUser.
+func TestIntegrationYouTrackUserLifecycle(t *testing.T) {
+	client, ctx := requireIntegrationConfig(t)
+	stamp := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	login := "it-user-" + stamp
+	createdUser, err := client.CreateUser(ctx, User{
+		Login:    login,
+		FullName: "Integration " + stamp,
+		Email:    login + "@example.com",
+		Password: integrationUserPassword(stamp),
+	})
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	registerCleanupUser(t, client, &createdUser)
+
+	read, err := client.GetUserByID(ctx, createdUser.ID)
+	if err != nil {
+		t.Fatalf("failed to read back created user by the id CreateUser returned (%s): %v", createdUser.ID, err)
+	}
+	if read.ID != createdUser.ID || read.Login != login || read.FullName != createdUser.FullName || read.Email != createdUser.Email || read.Banned {
+		t.Fatalf("read-back does not match created user: got %+v, created %+v", *read, *createdUser)
+	}
+
+	if _, err := client.SetUserBanned(ctx, createdUser.ID, true); err != nil {
+		t.Fatalf("failed to ban user: %v", err)
+	}
+	read, err = client.GetUserByID(ctx, createdUser.ID)
+	if err != nil {
+		t.Fatalf("failed to read back banned user: %v", err)
+	}
+	if !read.Banned {
+		t.Fatal("read-back of banned user reports banned=false")
+	}
+
+	deleteUserOrFail(t, ctx, client, createdUser.ID)
+	if _, err := client.GetUserByID(ctx, createdUser.ID); !IsNotFoundError(err) {
+		t.Fatalf("expected 404 reading deleted user, got: %v", err)
+	}
+	createdUser = nil
+}
+
 func TestIntegrationHubUserGroupMembershipLifecycle(t *testing.T) {
 	client, ctx := requireHubIntegrationConfig(t)
 

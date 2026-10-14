@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -352,6 +353,50 @@ func TestCreateUser(t *testing.T) {
 	}
 }
 
+// --- GetUserByID ---
+
+func TestGetUserByID(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf(errUnexpectedMethod, r.Method)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if fields := r.URL.Query().Get("fields"); !strings.Contains(fields, "email") || !strings.Contains(fields, "banned") {
+			t.Fatalf("fields param does not request email and banned: %q", fields)
+		}
+
+		encodeJSON(t, w, User{ID: testUserID, Login: testUserLogin, FullName: testUserFullName, Email: testUserEmail, Banned: true})
+	})
+	defer server.Close()
+
+	user, err := client.GetUserByID(context.Background(), testUserID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedError, err)
+	}
+	want := User{ID: testUserID, Login: testUserLogin, FullName: testUserFullName, Email: testUserEmail, Banned: true}
+	if *user != want {
+		t.Fatalf("unexpected user: got %+v, want %+v", *user, want)
+	}
+}
+
+func TestGetUserByIDNotFound(t *testing.T) {
+	t.Parallel()
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	defer server.Close()
+
+	_, err := client.GetUserByID(context.Background(), "missing-user")
+	if !IsNotFoundError(err) {
+		t.Fatalf("IsNotFoundError = false for a 404; got error: %v", err)
+	}
+}
+
 // --- UpdateUser ---
 
 func TestUpdateUser(t *testing.T) {
@@ -482,12 +527,22 @@ func TestSetUserBanned(t *testing.T) {
 
 // --- DeleteUser ---
 
-func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bool) http.HandlerFunc {
+func newDeleteUserHandler(t *testing.T, statusCode int, validateDeleteRequest bool, readsBeforeGone int32) http.HandlerFunc {
 	t.Helper()
+
+	var reads atomic.Int32
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
+			if !strings.HasSuffix(r.URL.Path, "/api/users/"+testUserID) {
+				encodeJSON(t, w, []Holder{{Id: "guest-id", Login: "guest"}})
+				return
+			}
+			if reads.Add(1) <= readsBeforeGone {
+				encodeJSON(t, w, User{ID: testUserID})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
@@ -515,11 +570,17 @@ func TestDeleteUser(t *testing.T) {
 		name                  string
 		statusCode            int
 		validateDeleteRequest bool
+		readsBeforeGone       int32
 	}{
 		{
 			name:                  "success",
 			statusCode:            http.StatusNoContent,
 			validateDeleteRequest: true,
+		},
+		{
+			name:            "waits until hub has processed the delete",
+			statusCode:      http.StatusNoContent,
+			readsBeforeGone: 2,
 		},
 		{
 			name:       "404 is ignored",
@@ -531,7 +592,7 @@ func TestDeleteUser(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, server := newTestClient(t, newDeleteUserHandler(t, tc.statusCode, tc.validateDeleteRequest))
+			client, server := newTestClient(t, newDeleteUserHandler(t, tc.statusCode, tc.validateDeleteRequest, tc.readsBeforeGone))
 			defer server.Close()
 
 			if err := client.DeleteUser(context.Background(), testUserID); err != nil {
