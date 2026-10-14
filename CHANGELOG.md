@@ -1,3 +1,13 @@
+## 1.11.0
+FEATURES:
+- Add `GetUserByID(ctx, userID)`, which reads one user with its lifecycle fields (`login`,
+  `fullName`, `email`, `banned`). `GetUserByLogin` returns only the reduced listing projection
+  and pages through every user, so it cannot back a declarative read of a managed account.
+  A missing user surfaces as a 404 that `IsNotFoundError` recognises.
+
+FIXED:
+- updated dependencies
+
 ## 1.10.0
 FEATURES:
 - Add owned field bundle support (`api/admin/customFieldSettings/bundles/ownedField`):

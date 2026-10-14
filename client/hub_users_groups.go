@@ -74,6 +74,27 @@ func (c *Client) CreateUser(ctx context.Context, user User) (*User, error) {
 	return &created, nil
 }
 
+// GetUserByID returns a single user, including the lifecycle fields (email, banned)
+// that the paginated user listing does not carry.
+func (c *Client) GetUserByID(ctx context.Context, userID string) (*User, error) {
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(hubSpecificUserPath, c.HostURL, youtrackUsersAPIPath, url.PathEscape(userID), hubUserLifecycleFields), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create get user request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	var user User
+	if err := json.Unmarshal(body, &user); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal user: %w", err)
+	}
+
+	return &user, nil
+}
+
 // UpdateUser updates a user using Hub-style lifecycle semantics.
 func (c *Client) UpdateUser(ctx context.Context, userID string, user User) (*User, error) {
 	// #nosec G117 -- password is intentionally sent to the Hub API when updating users.
@@ -179,7 +200,12 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
 
-	return nil
+	// Hub acknowledges the delete before applying it, so the user stays readable
+	// for a moment afterwards; wait until it is gone so a read-back reports 404.
+	return awaitAsyncProcessing(ctx, func(attemptCtx context.Context) bool {
+		_, getErr := c.GetUserByID(attemptCtx, userID)
+		return IsNotFoundError(getErr)
+	})
 }
 
 // AddUserToGroup adds a user to a group using Hub usergroups endpoints.
