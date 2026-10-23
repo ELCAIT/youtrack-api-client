@@ -3,7 +3,9 @@ package youtrack
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -326,6 +328,44 @@ func TestListAppUsages(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != testAppUsageID {
 		t.Fatalf("unexpected usages: %+v", got)
+	}
+}
+
+func TestListAppUsagesPagesPastFirstPage(t *testing.T) {
+	t.Parallel()
+
+	total := defaultPageSize + 7
+	all := make([]AppUsage, total)
+	for i := range all {
+		all[i] = AppUsage{ID: fmt.Sprintf("usage-%d", i), Project: &Project{ID: fmt.Sprintf("0-%d", i)}}
+	}
+
+	client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		top, _ := strconv.Atoi(r.URL.Query().Get("$top"))
+		skip, _ := strconv.Atoi(r.URL.Query().Get("$skip"))
+		if top != defaultPageSize {
+			t.Errorf("unexpected $top: got %d, want %d", top, defaultPageSize)
+		}
+		end := min(skip+top, total)
+		encodeJSON(t, w, all[min(skip, total):end])
+	})
+	defer server.Close()
+
+	got, err := client.ListAppUsages(context.Background(), testAppID)
+	if checkErr(t, err, false) {
+		return
+	}
+	if len(got) != total {
+		t.Fatalf("unexpected usages count: got %d, want %d", len(got), total)
+	}
+
+	last := fmt.Sprintf("0-%d", total-1)
+	usage, err := client.GetAppUsageForProject(context.Background(), testAppID, last)
+	if checkErr(t, err, false) {
+		return
+	}
+	if usage == nil {
+		t.Fatalf("usage for project %s on the second page was not found", last)
 	}
 }
 

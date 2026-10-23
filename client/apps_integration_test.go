@@ -315,7 +315,8 @@ func TestIntegrationYouTrackAppAllProjectsActivation(t *testing.T) {
 
 	app := resolveIntegrationApp(t, ctx, client)
 
-	projects, err := client.ListProjects(ctx, 0, 0)
+	// Paged like EnableAppForAllProjects: ListProjects(ctx, 0, 0) stops at YouTrack's default of 42.
+	projects, err := client.ListAllProjects(ctx)
 	if err != nil {
 		t.Fatalf("failed to list projects: %v", err)
 	}
