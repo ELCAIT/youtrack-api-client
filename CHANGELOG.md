@@ -1,3 +1,10 @@
+## 1.12.0
+FIXES:
+- `ListAppUsages` now pages through every usage of an app. It sent no `$top`, so YouTrack
+  answered with only its first 42 usages, and `GetAppUsageForProject`, `EnableAppForProject`,
+  `DisableAppForProject` and `DetachAppFromProject` reported an app attached to more than 42
+  projects as not attached to the others: enabling attached it again and detaching did nothing.
+
 ## 1.11.0
 FEATURES:
 - Add `GetUserByID(ctx, userID)`, which reads one user with its lifecycle fields (`login`,

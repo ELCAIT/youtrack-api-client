@@ -140,9 +140,18 @@ func appName(app App) string {
 }
 
 // ListAppUsages returns every project the app is attached to, together with
-// whether the app is currently enabled in each of them.
+// whether the app is currently enabled in each of them. It pages through the
+// collection, since YouTrack returns only the first 42 usages when no $top is
+// given, which would hide every project past that point.
 func (c *Client) ListAppUsages(ctx context.Context, appID string) ([]AppUsage, error) {
-	endpoint := fmt.Sprintf(appUsagesListFmt, c.HostURL, appsAPIPath, url.PathEscape(appID), appUsagesSubPath, appUsageFieldsParam)
+	return listAll(ctx, defaultPageSize, func(ctx context.Context, top, skip int) ([]AppUsage, error) {
+		return c.listAppUsagesPage(ctx, appID, top, skip)
+	})
+}
+
+func (c *Client) listAppUsagesPage(ctx context.Context, appID string, top, skip int) ([]AppUsage, error) {
+	endpoint := fmt.Sprintf(appUsagesListFmt, c.HostURL, appsAPIPath, url.PathEscape(appID), appUsagesSubPath,
+		withPagination(appUsageFields, top, skip))
 
 	req, err := http.NewRequestWithContext(ctx, httpMethodGet, endpoint, nil)
 	if err != nil {
