@@ -1,3 +1,11 @@
+## 1.13.0
+FEATURES:
+- Add the global configuration of an app: `GetAppGlobalConfig` reads whether it is enabled, its settings
+  and who may use it, `SetAppGlobalConfig` enables or disables it and replaces its settings, and
+  `SetAppVisibility` replaces the groups and users allowed to use it. The settings are exchanged as the
+  JSON document YouTrack stores, because each app declares its own in `settings.json`. Settings of
+  `format: secret` are never returned, a read answers `<***>` in their place.
+
 ## 1.12.0
 FIXES:
 - `ListAppUsages` now pages through every usage of an app. It sent no `$top`, so YouTrack

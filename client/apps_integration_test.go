@@ -389,3 +389,40 @@ func restoreAppUsages(t *testing.T, client *Client, appID string, before []AppUs
 		}
 	}
 }
+
+// TestIntegrationYouTrackAppGlobalConfig writes back the values it just read, so
+// it leaves the app as it found it. It never writes the global settings: a
+// secret in them reads as "<***>" and writing that back would overwrite it.
+func TestIntegrationYouTrackAppGlobalConfig(t *testing.T) {
+	client, ctx := requireAppsIntegrationConfig(t)
+	app := resolveIntegrationApp(t, ctx, client)
+
+	before, err := client.GetAppGlobalConfig(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("failed to read global config: %v", err)
+	}
+
+	enabled := before.Enabled
+	set, err := client.SetAppGlobalConfig(ctx, app.ID, AppGlobalConfigUpdate{Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("failed to set enabled: %v", err)
+	}
+	if set.Enabled != before.Enabled {
+		t.Fatalf("enabled changed: got %v, want %v", set.Enabled, before.Enabled)
+	}
+
+	var groups, users []string
+	for _, g := range before.VisibilitySettings.PermittedGroups {
+		groups = append(groups, g.ID)
+	}
+	for _, u := range before.VisibilitySettings.PermittedUsers {
+		users = append(users, u.ID)
+	}
+	visibility, err := client.SetAppVisibility(ctx, app.ID, groups, users)
+	if err != nil {
+		t.Fatalf("failed to set visibility: %v", err)
+	}
+	if len(visibility.PermittedGroups) != len(groups) || len(visibility.PermittedUsers) != len(users) {
+		t.Fatalf("visibility changed: got %+v, want %d groups and %d users", visibility, len(groups), len(users))
+	}
+}
