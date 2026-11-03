@@ -2,8 +2,9 @@
 FEATURES:
 - Add the global configuration of an app: `GetAppGlobalConfig` reads whether it is enabled, its settings
   and who may use it, `SetAppGlobalConfig` enables or disables it and replaces its settings, and
-  `SetAppVisibility` replaces the groups and users allowed to use it. The settings are exchanged as the
-  JSON document YouTrack stores, because each app declares its own in `settings.json`. Settings of
+  `SetAppVisibility` replaces the groups and users allowed to use it. The settings are a JSON object
+  (`json.RawMessage` on a read, any value that marshals to one on a write), because each app declares its
+  own in `settings.json`; the client wraps them in the string YouTrack carries them in. Settings of
   `format: secret` are never returned, a read answers `<***>` in their place.
 
 ## 1.12.0

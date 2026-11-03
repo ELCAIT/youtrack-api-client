@@ -9,7 +9,22 @@ import (
 	"testing"
 )
 
-const testSettingsDoc = `{"youtrackUrl":"http://youtrack:8080","apiToken":"<***>"}`
+const (
+	testSettingsDoc = `{"youtrackUrl":"http://youtrack:8080","apiToken":"<***>"}`
+
+	// testSettingsWrite has no character json.Marshal escapes, so the payload
+	// can be compared byte for byte.
+	testSettingsWrite = `{"youtrackUrl":"http://youtrack:8080","apiToken":"perm-x"}`
+)
+
+// testWireConfig is a global config as YouTrack answers it, with the settings
+// wrapped in a JSON string.
+func testWireConfig(enabled bool, settings string, visibility *AppVisibilitySettings) appGlobalConfigWire {
+	return appGlobalConfigWire{
+		AppGlobalConfig: AppGlobalConfig{Enabled: enabled, VisibilitySettings: visibility},
+		GlobalSettings:  settings,
+	}
+}
 
 func TestGetAppGlobalConfig(t *testing.T) {
 	t.Parallel()
@@ -21,14 +36,10 @@ func TestGetAppGlobalConfig(t *testing.T) {
 		if r.URL.Path != testAppPath {
 			t.Errorf(fmtUnexpectedPath, r.URL.Path)
 		}
-		encodeJSON(t, w, map[string]any{"globalConfig": AppGlobalConfig{
-			Enabled:        true,
-			GlobalSettings: testSettingsDoc,
-			VisibilitySettings: &AppVisibilitySettings{
-				PermittedGroups: []AppVisibilityGroup{{ID: "6-0", Name: "Registered Users"}},
-				PermittedUsers:  []AppVisibilityUser{},
-			},
-		}})
+		encodeJSON(t, w, map[string]any{"globalConfig": testWireConfig(true, testSettingsDoc, &AppVisibilitySettings{
+			PermittedGroups: []AppVisibilityGroup{{ID: "6-0", Name: "Registered Users"}},
+			PermittedUsers:  []AppVisibilityUser{},
+		})})
 	})
 	defer server.Close()
 
@@ -36,7 +47,7 @@ func TestGetAppGlobalConfig(t *testing.T) {
 	if checkErr(t, err, false) {
 		return
 	}
-	if !got.Enabled || got.GlobalSettings != testSettingsDoc {
+	if !got.Enabled || string(got.GlobalSettings) != testSettingsDoc {
 		t.Fatalf("unexpected config: %+v", got)
 	}
 	if len(got.VisibilitySettings.PermittedGroups) != 1 || got.VisibilitySettings.PermittedGroups[0].ID != "6-0" {
@@ -59,7 +70,6 @@ func TestGetAppGlobalConfigMissing(t *testing.T) {
 func TestSetAppGlobalConfig(t *testing.T) {
 	t.Parallel()
 
-	settings := testSettingsDoc
 	enabled := false
 
 	tests := []struct {
@@ -67,8 +77,11 @@ func TestSetAppGlobalConfig(t *testing.T) {
 		update AppGlobalConfigUpdate
 		want   string
 	}{
-		{name: "settings only", update: AppGlobalConfigUpdate{GlobalSettings: &settings}, want: `{"globalSettings":` + mustJSON(t, settings) + `}`},
+		// the settings go out as a JSON string holding the object, not as the object
+		{name: "raw settings", update: AppGlobalConfigUpdate{GlobalSettings: json.RawMessage(testSettingsWrite)}, want: `{"globalSettings":` + mustJSON(t, testSettingsWrite) + `}`},
+		{name: "map settings", update: AppGlobalConfigUpdate{GlobalSettings: map[string]any{"a": 1}}, want: `{"globalSettings":"{\"a\":1}"}`},
 		{name: "enabled only", update: AppGlobalConfigUpdate{Enabled: &enabled}, want: `{"enabled":false}`},
+		{name: "empty raw settings are left alone", update: AppGlobalConfigUpdate{Enabled: &enabled, GlobalSettings: json.RawMessage(nil)}, want: `{"enabled":false}`},
 	}
 
 	for _, tc := range tests {
@@ -86,7 +99,7 @@ func TestSetAppGlobalConfig(t *testing.T) {
 				if string(body) != tc.want {
 					t.Errorf("unexpected payload: got %s, want %s", body, tc.want)
 				}
-				encodeJSON(t, w, AppGlobalConfig{Enabled: enabled, GlobalSettings: settings})
+				encodeJSON(t, w, testWireConfig(enabled, testSettingsDoc, nil))
 			})
 			defer server.Close()
 
@@ -94,7 +107,7 @@ func TestSetAppGlobalConfig(t *testing.T) {
 			if checkErr(t, err, false) {
 				return
 			}
-			if got.GlobalSettings != settings {
+			if string(got.GlobalSettings) != testSettingsDoc {
 				t.Fatalf("unexpected settings: %s", got.GlobalSettings)
 			}
 		})
@@ -130,9 +143,9 @@ func TestSetAppVisibility(t *testing.T) {
 				if !strings.Contains(string(body), tc.want) {
 					t.Errorf("unexpected payload: got %s, want it to contain %s", body, tc.want)
 				}
-				encodeJSON(t, w, map[string]any{"globalConfig": AppGlobalConfig{
-					VisibilitySettings: &AppVisibilitySettings{PermittedGroups: []AppVisibilityGroup{{ID: "6-0"}}},
-				}})
+				encodeJSON(t, w, map[string]any{"globalConfig": testWireConfig(true, "", &AppVisibilitySettings{
+					PermittedGroups: []AppVisibilityGroup{{ID: "6-0"}},
+				})})
 			})
 			defer server.Close()
 
