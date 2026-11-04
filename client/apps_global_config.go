@@ -33,8 +33,8 @@ const (
 		"visibilitySettings(permittedGroups(id,name,$type),permittedUsers(id,login,$type))"
 	appGlobalConfigFieldsParam = "fields=globalConfig(" + appGlobalConfigFields + ")"
 
-	appGlobalConfigWriteFields      = "enabled,globalSettings"
-	appGlobalConfigWriteFieldsParam = "fields=" + appGlobalConfigWriteFields
+	// a write answers with the configuration it leaves, so it asks for every field a read does
+	appGlobalConfigWriteFieldsParam = "fields=" + appGlobalConfigFields
 
 	appGlobalConfigWriteFmt = "%s/%s/%s/%s?%s"
 )
@@ -160,8 +160,9 @@ func (c *Client) GetAppGlobalConfig(ctx context.Context, appID string) (*AppGlob
 
 // SetAppGlobalConfig enables or disables an app and/or replaces its global
 // settings. GlobalSettings replaces the whole settings document: a setting left
-// out of it is cleared, a secret included. The response carries only Enabled
-// and GlobalSettings, with secrets masked.
+// out of it is cleared, a secret included. The response is the whole
+// configuration after the write, as GetAppGlobalConfig returns it: who may use
+// the app included, secrets masked.
 func (c *Client) SetAppGlobalConfig(ctx context.Context, appID string, update AppGlobalConfigUpdate) (*AppGlobalConfig, error) {
 	settings, err := wrapSettings(update.GlobalSettings)
 	if err != nil {

@@ -52,7 +52,7 @@ const (
 )
 
 // Version is the client version reported in the User-Agent header.
-const Version = "1.13.0"
+const Version = "1.14.0"
 
 // HTTPError represents an HTTP error response.
 //

@@ -1,3 +1,9 @@
+## 1.14.0
+FEATURES:
+- `SetAppGlobalConfig` returns the whole configuration it leaves, as `GetAppGlobalConfig` does: who may use
+  the app (`VisibilitySettings`) and `MissingRequiredSettings` included. A caller that writes the visibility
+  next, keeping the users it does not manage, no longer needs a read in between.
+
 ## 1.13.0
 FEATURES:
 - Add the global configuration of an app: `GetAppGlobalConfig` reads whether it is enabled, its settings
