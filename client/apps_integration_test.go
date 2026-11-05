@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -409,6 +410,12 @@ func TestIntegrationYouTrackAppGlobalConfig(t *testing.T) {
 	}
 	if set.Enabled != before.Enabled {
 		t.Fatalf("enabled changed: got %v, want %v", set.Enabled, before.Enabled)
+	}
+	if before.VisibilitySettings == nil {
+		t.Fatal("global config read lacks the visibility settings")
+	}
+	if !reflect.DeepEqual(set.VisibilitySettings, before.VisibilitySettings) {
+		t.Fatalf("write response lacks the visibility read before: got %+v, want %+v", set.VisibilitySettings, before.VisibilitySettings)
 	}
 
 	var groups, users []string

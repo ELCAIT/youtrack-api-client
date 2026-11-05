@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -84,6 +85,11 @@ func TestSetAppGlobalConfig(t *testing.T) {
 		{name: "empty raw settings are left alone", update: AppGlobalConfigUpdate{Enabled: &enabled, GlobalSettings: json.RawMessage(nil)}, want: `{"enabled":false}`},
 	}
 
+	visibility := &AppVisibilitySettings{
+		PermittedGroups: []AppVisibilityGroup{{ID: "6-0"}},
+		PermittedUsers:  []AppVisibilityUser{{ID: "1-1"}},
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -95,11 +101,14 @@ func TestSetAppGlobalConfig(t *testing.T) {
 				if r.URL.Path != testAppPath+"/globalConfig" {
 					t.Errorf(fmtUnexpectedPath, r.URL.Path)
 				}
+				if r.URL.Query().Get("fields") != appGlobalConfigFields {
+					t.Errorf("unexpected fields: %s", r.URL.Query().Get("fields"))
+				}
 				body, _ := io.ReadAll(r.Body)
 				if string(body) != tc.want {
 					t.Errorf("unexpected payload: got %s, want %s", body, tc.want)
 				}
-				encodeJSON(t, w, testWireConfig(enabled, testSettingsDoc, nil))
+				encodeJSON(t, w, testWireConfig(enabled, testSettingsDoc, visibility))
 			})
 			defer server.Close()
 
@@ -109,6 +118,9 @@ func TestSetAppGlobalConfig(t *testing.T) {
 			}
 			if string(got.GlobalSettings) != testSettingsDoc {
 				t.Fatalf("unexpected settings: %s", got.GlobalSettings)
+			}
+			if !reflect.DeepEqual(got.VisibilitySettings, visibility) {
+				t.Fatalf("unexpected visibility: got %+v, want %+v", got.VisibilitySettings, visibility)
 			}
 		})
 	}
