@@ -95,6 +95,7 @@ func TestGetMailboxByID(t *testing.T) {
 	}{
 		{name: "found", status: http.StatusOK},
 		{name: "missing", status: http.StatusNotFound, wantErr: true, wantNotFound: true},
+		{name: "removal in progress", status: http.StatusInternalServerError, wantErr: true, wantNotFound: true},
 	}
 
 	for _, tc := range tests {
@@ -107,6 +108,7 @@ func TestGetMailboxByID(t *testing.T) {
 				}
 				if tc.status != http.StatusOK {
 					w.WriteHeader(tc.status)
+					_, _ = io.WriteString(w, "Mailbox["+testMailboxID+"] was removed.")
 					return
 				}
 				encodeJSON(t, w, testMailbox())
@@ -114,7 +116,7 @@ func TestGetMailboxByID(t *testing.T) {
 			defer server.Close()
 
 			got, err := client.GetMailboxByID(context.Background(), testMailboxID)
-			if tc.wantNotFound && !IsNotFoundError(err) {
+			if tc.wantNotFound && !IsNotFound(err) {
 				t.Fatalf("expected a not-found error, got %v", err)
 			}
 			if checkErr(t, err, tc.wantErr) {
@@ -219,21 +221,37 @@ func assertBodyKeys(t *testing.T, body, want map[string]any, absent []string) {
 func TestDeleteMailbox(t *testing.T) {
 	t.Parallel()
 
+	removed := "Mailbox[" + testMailboxID + "] was removed."
+
 	tests := []struct {
 		name         string
 		deleteStatus int
+		deleteBody   string
 		// visibleReads is how many reads still see the mailbox after the delete.
 		visibleReads int32
-		// removingReads is how many reads after those answer that the removal
-		// is in progress.
+		// removingReads is how many reads after those answer removingBody.
 		removingReads int32
+		removingBody  string
+		wantReads     int32
 		wantErr       bool
 	}{
-		{name: "gone at once", deleteStatus: http.StatusOK},
-		{name: "waits for an asynchronous delete", deleteStatus: http.StatusOK, visibleReads: 2},
-		{name: "waits through the removal in progress", deleteStatus: http.StatusOK, visibleReads: 1, removingReads: 2},
-		{name: "already gone", deleteStatus: http.StatusNotFound},
+		{name: "gone at once", deleteStatus: http.StatusOK, wantReads: 1},
+		{name: "waits for an asynchronous delete", deleteStatus: http.StatusOK, visibleReads: 2, wantReads: 3},
+		{
+			name: "waits through the removal in progress", deleteStatus: http.StatusOK,
+			visibleReads: 1, removingReads: 2, removingBody: removed, wantReads: 4,
+		},
+		{
+			name: "delete answers the removal in progress", deleteStatus: http.StatusInternalServerError, deleteBody: removed,
+			removingReads: 1, removingBody: removed, wantReads: 2,
+		},
+		{name: "already gone skips the read-back", deleteStatus: http.StatusNotFound},
 		{name: "server error", deleteStatus: http.StatusInternalServerError, wantErr: true},
+		{
+			name: "another mailbox's removal is a real error", deleteStatus: http.StatusOK,
+			removingReads: 1, removingBody: "Mailbox[1-1] was removed.", wantErr: true,
+		},
+		{name: "still there after the budget", deleteStatus: http.StatusOK, visibleReads: 1 << 30, wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -248,6 +266,7 @@ func TestDeleteMailbox(t *testing.T) {
 				switch r.Method {
 				case httpMethodDelete:
 					w.WriteHeader(tc.deleteStatus)
+					_, _ = io.WriteString(w, tc.deleteBody)
 				case httpMethodGet:
 					read := reads.Add(1)
 					switch {
@@ -255,7 +274,7 @@ func TestDeleteMailbox(t *testing.T) {
 						encodeJSON(t, w, testMailbox())
 					case read <= tc.visibleReads+tc.removingReads:
 						w.WriteHeader(http.StatusInternalServerError)
-						_, _ = io.WriteString(w, "Mailbox["+testMailboxID+"] was removed.")
+						_, _ = io.WriteString(w, tc.removingBody)
 					default:
 						w.WriteHeader(http.StatusNotFound)
 					}
@@ -269,8 +288,53 @@ func TestDeleteMailbox(t *testing.T) {
 			if checkErr(t, err, tc.wantErr) {
 				return
 			}
-			if want := tc.visibleReads + tc.removingReads + 1; reads.Load() != want {
-				t.Fatalf("expected %d reads, got %d", want, reads.Load())
+			if reads.Load() != tc.wantReads {
+				t.Fatalf("expected %d reads, got %d", tc.wantReads, reads.Load())
+			}
+		})
+	}
+}
+
+func TestMailboxEmptyIDsAreRejected(t *testing.T) {
+	t.Parallel()
+
+	calls := map[string]func(*Client, string) error{
+		"GetMailboxByID": func(c *Client, id string) error { _, err := c.GetMailboxByID(context.Background(), id); return err },
+		"UpdateMailbox": func(c *Client, id string) error {
+			_, err := c.UpdateMailbox(context.Background(), id, MailboxPayload{})
+			return err
+		},
+		"DeleteMailbox": func(c *Client, id string) error { return c.DeleteMailbox(context.Background(), id) },
+		"ListMailboxFolders": func(c *Client, id string) error {
+			_, err := c.ListMailboxFolders(context.Background(), id)
+			return err
+		},
+		"GetMailboxStatus": func(c *Client, id string) error { _, err := c.GetMailboxStatus(context.Background(), id); return err },
+		"StartMailboxFetch": func(c *Client, id string) error {
+			_, err := c.StartMailboxFetch(context.Background(), id)
+			return err
+		},
+		"GetMailRuleByID": func(c *Client, id string) error { _, err := c.GetMailRuleByID(context.Background(), id); return err },
+		"UpdateMailRule": func(c *Client, id string) error {
+			_, err := c.UpdateMailRule(context.Background(), id, MailRulePayload{})
+			return err
+		},
+		"DeleteMailRule": func(c *Client, id string) error { return c.DeleteMailRule(context.Background(), id) },
+	}
+
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, func(_ http.ResponseWriter, r *http.Request) {
+				t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			})
+			defer server.Close()
+
+			for _, id := range []string{"", "  "} {
+				if err := call(client, id); err == nil {
+					t.Fatalf("expected an error for id %q", id)
+				}
 			}
 		})
 	}

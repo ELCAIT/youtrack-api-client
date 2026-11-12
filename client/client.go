@@ -1,6 +1,7 @@
 package youtrack
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -408,6 +409,50 @@ func (c *Client) doRequest(req *http.Request) ([]byte, error) {
 	}
 
 	return body, nil
+}
+
+// errRequestFailure wraps the error of a request sent by sendJSON.
+const errRequestFailure = "failed to %s: %w"
+
+// sendJSON sends one request and returns the response body. payload is
+// marshalled as the JSON body when it is not nil. action names the operation in
+// error messages ("create mailbox").
+func sendJSON(ctx context.Context, c *Client, method, endpoint string, payload any, action string) ([]byte, error) {
+	var body io.Reader
+	if payload != nil {
+		rb, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal %s payload: %w", action, err)
+		}
+		body = bytes.NewReader(rb)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create %s request: %w", action, err)
+	}
+
+	respBody, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf(errRequestFailure, action, err)
+	}
+
+	return respBody, nil
+}
+
+// sendAndDecode is sendJSON for a request whose response is decoded into T.
+func sendAndDecode[T any](ctx context.Context, c *Client, method, endpoint string, payload any, action string) (*T, error) {
+	respBody, err := sendJSON(ctx, c, method, endpoint, payload, action)
+	if err != nil {
+		return nil, err
+	}
+
+	var result T
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %s response: %w", action, err)
+	}
+
+	return &result, nil
 }
 
 type deleteConfig struct {

@@ -207,7 +207,9 @@ left as it is. Things to know:
 - The password and the Microsoft client secret are write-only, and changing a
   mailbox's host, port or login requires sending the password again.
 - Deleting a mailbox deletes its rules. `DeleteMailbox` waits until YouTrack has
-  applied the delete.
+  applied the delete, and returns an error if the mailbox is still there after
+  the wait. While the delete is being applied, `GetMailboxByID` returns an error
+  `IsNotFound` recognises (but not `IsNotFoundError`, since YouTrack answers 500).
 - `GetMailboxCronSettings`/`UpdateMailboxCronSettings` control the one
   instance-wide poll schedule; `StartMailboxFetch` polls a mailbox right away.
 

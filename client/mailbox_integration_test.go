@@ -56,6 +56,34 @@ func createIntegrationMailbox(t *testing.T, ctx context.Context, client *Client,
 	return mailbox
 }
 
+// refID is the ID of an optional reference, or "" when YouTrack left it out.
+func refID(ref *MailboxIDRef) string {
+	if ref == nil {
+		return ""
+	}
+
+	return ref.ID
+}
+
+// requireSkipHonoured checks that a list endpoint pages with $top and $skip,
+// which ListAll* relies on: two one-item pages must hold different entities.
+// It needs at least two entities to exist.
+func requireSkipHonoured[T any](t *testing.T, ctx context.Context, list func(context.Context, int, int) ([]T, error), id func(T) string) {
+	t.Helper()
+
+	first, err := list(ctx, 1, 0)
+	if err != nil {
+		t.Fatalf("failed to read the first page: %v", err)
+	}
+	second, err := list(ctx, 1, 1)
+	if err != nil {
+		t.Fatalf("failed to read the second page: %v", err)
+	}
+	if len(first) != 1 || len(second) != 1 || id(first[0]) == id(second[0]) {
+		t.Fatalf("$top/$skip not honoured: first page %+v, second page %+v", first, second)
+	}
+}
+
 func TestIntegrationYouTrackMailboxLifecycle(t *testing.T) {
 	client, ctx := requireMailboxIntegrationConfig(t)
 	stamp := integrationStamp()
@@ -75,12 +103,17 @@ func TestIntegrationYouTrackMailboxLifecycle(t *testing.T) {
 		t.Fatalf("unexpected read of mailbox %s: %+v, %v", mailbox.ID, got, err)
 	}
 
+	other := createIntegrationMailbox(t, ctx, client, "it-other-"+stamp+"@example.com")
+	requireSkipHonoured(t, ctx, client.ListMailboxes, func(m Mailbox) string { return m.ID })
+
 	all, err := client.ListAllMailboxes(ctx)
 	if err != nil {
 		t.Fatalf("failed to list mailboxes: %v", err)
 	}
-	if !slices.ContainsFunc(all, func(m Mailbox) bool { return m.ID == mailbox.ID }) {
-		t.Fatalf("mailbox %s missing from %+v", mailbox.ID, all)
+	for _, want := range []string{mailbox.ID, other.ID} {
+		if !slices.ContainsFunc(all, func(m Mailbox) bool { return m.ID == want }) {
+			t.Fatalf("mailbox %s missing from %+v", want, all)
+		}
 	}
 
 	// A partial update keeps every field it does not set.
@@ -150,8 +183,9 @@ func TestIntegrationYouTrackMailRuleLifecycle(t *testing.T) {
 		}
 	})
 
-	if rule.Mailbox.ID != mailbox.ID || rule.Project.ID != project.ID || rule.Folder != "INBOX" || !rule.FilterAutoReplies ||
-		rule.SpamFilterMode.ID != MailRuleSpamFilterMark || rule.Policy.Policy != MailRulePolicySenderOrNewUser {
+	if refID(rule.Mailbox) != mailbox.ID || rule.Project == nil || rule.Project.ID != project.ID || rule.Folder != "INBOX" ||
+		!rule.FilterAutoReplies || refID(rule.SpamFilterMode) != MailRuleSpamFilterMark ||
+		rule.Policy == nil || rule.Policy.Policy != MailRulePolicySenderOrNewUser {
 		t.Fatalf("unexpected created rule: %+v", rule)
 	}
 
@@ -174,7 +208,8 @@ func TestIntegrationYouTrackMailRuleLifecycle(t *testing.T) {
 		t.Fatalf("failed to update mail rule: %v", err)
 	}
 	if !updated.Disabled || updated.ReplyTo == "" || updated.NewIssueCommand != "tag mail" || updated.Folder != "INBOX" ||
-		updated.Policy.User == nil || updated.Policy.User.ID != maintainer.ID || updated.SpamFilterMode.ID != MailRuleSpamFilterBlock ||
+		updated.Policy == nil || updated.Policy.User == nil || updated.Policy.User.ID != maintainer.ID ||
+		refID(updated.SpamFilterMode) != MailRuleSpamFilterBlock ||
 		len(updated.Filters) != 1 || updated.Filters[0].Patterns != "urgent\nbug" {
 		t.Fatalf("unexpected updated rule: %+v", updated)
 	}
@@ -188,7 +223,8 @@ func TestIntegrationYouTrackMailRuleLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to clear mail rule fields: %v", err)
 	}
-	if cleared.ReplyTo != "" || cleared.NewIssueCommand != "" || len(cleared.Filters) != 0 || cleared.Policy.User != nil || !cleared.Disabled {
+	if cleared.ReplyTo != "" || cleared.NewIssueCommand != "" || len(cleared.Filters) != 0 ||
+		cleared.Policy == nil || cleared.Policy.User != nil || !cleared.Disabled {
 		t.Fatalf("unexpected cleared rule: %+v", cleared)
 	}
 
@@ -215,15 +251,22 @@ func TestIntegrationYouTrackMailboxDeleteCascadesRules(t *testing.T) {
 	project := createIntegrationProject(t, ctx, client, stamp)
 	mailbox := createIntegrationMailbox(t, ctx, client, "it-cascade-"+stamp+"@example.com")
 
-	rule, err := client.CreateMailRule(ctx, MailRulePayload{
-		Mailbox:    &MailboxIDRef{ID: mailbox.ID},
-		Project:    &MailboxIDRef{ID: project.ID},
-		Maintainer: &UserRef{ID: project.Leader.ID},
-		Policy:     &MailRulePolicy{Policy: MailRulePolicySenderOrNewUser},
-	})
-	if err != nil {
-		t.Fatalf("failed to create mail rule: %v", err)
+	var rules []*MailRule
+	for _, folder := range []string{"INBOX", "Support"} {
+		rule, err := client.CreateMailRule(ctx, MailRulePayload{
+			Mailbox:    &MailboxIDRef{ID: mailbox.ID},
+			Project:    &MailboxIDRef{ID: project.ID},
+			Maintainer: &UserRef{ID: project.Leader.ID},
+			Folder:     ptr(folder),
+			Policy:     &MailRulePolicy{Policy: MailRulePolicySenderOrNewUser},
+		})
+		if err != nil {
+			t.Fatalf("failed to create mail rule: %v", err)
+		}
+		rules = append(rules, rule)
 	}
+
+	requireSkipHonoured(t, ctx, client.ListMailRules, func(r MailRule) string { return r.ID })
 
 	if err := client.DeleteMailbox(ctx, mailbox.ID); err != nil {
 		t.Fatalf("failed to delete mailbox: %v", err)
@@ -231,8 +274,10 @@ func TestIntegrationYouTrackMailboxDeleteCascadesRules(t *testing.T) {
 	if _, err := client.GetMailboxByID(ctx, mailbox.ID); !IsNotFoundError(err) {
 		t.Fatalf("DeleteMailbox returned before the mailbox was gone: %v", err)
 	}
-	if _, err := client.GetMailRuleByID(ctx, rule.ID); !IsNotFoundError(err) {
-		t.Fatalf("expected the rule to be deleted with its mailbox, got %v", err)
+	for _, rule := range rules {
+		if _, err := client.GetMailRuleByID(ctx, rule.ID); !IsNotFoundError(err) {
+			t.Fatalf("expected rule %s to be deleted with its mailbox, got %v", rule.ID, err)
+		}
 	}
 }
 

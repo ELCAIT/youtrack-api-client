@@ -13,9 +13,13 @@ FEATURES:
   - Fetching: `GetMailboxStatus`, `StartMailboxFetch` and `CancelMailboxFetch`; the instance-wide
     poll schedule via `GetMailboxCronSettings`/`UpdateMailboxCronSettings`; and
     `GetMailboxLimitations`.
-  - `DeleteMailbox` also deletes the mailbox's rules and waits until YouTrack has applied the delete.
-    YouTrack applies it asynchronously and, meanwhile, answers a read of the mailbox with a 500
-    "was removed".
+  - `DeleteMailbox` also deletes the mailbox's rules and waits until YouTrack has applied the delete,
+    failing if the mailbox is still there after the wait. YouTrack applies it asynchronously and,
+    meanwhile, answers requests for the mailbox with a 500 "Mailbox[<id>] was removed."; a repeated
+    `DeleteMailbox` treats that as a delete in progress, and `GetMailboxByID` reports it as an error
+    `IsNotFound` recognises.
+  - Methods taking a mailbox or rule ID reject an empty one instead of sending the request to the
+    collection URL, where a POST would create a new entity.
 
 ## 1.14.0
 FEATURES:
