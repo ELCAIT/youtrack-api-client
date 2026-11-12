@@ -172,6 +172,53 @@ These calls require the *Update Project* permission on the target project. For
 background on how apps are scoped globally versus per project, see the
 [JetBrains documentation](https://www.jetbrains.com/help/youtrack/devportal/apps-global-project-level.html).
 
+## Mailbox integration (undocumented API)
+
+Mailboxes are the mail accounts YouTrack polls; their mail rules turn the
+emails into issues and comments of a project:
+
+```go
+ptr := func(s string) *string { return &s } // or any pointer helper
+port := 993
+
+mailbox, err := client.CreateMailbox(ctx, youtrack.MailboxPayload{
+	Protocol: &youtrack.MailboxIDRef{ID: youtrack.MailProtocolIMAPS},
+	Host:     ptr("imap.example.com"),
+	Port:     &port,
+	Login:    ptr("support@example.com"),
+	Password: ptr(password),
+})
+if err != nil {
+	log.Fatalf("create mailbox: %v", err)
+}
+
+rule, err := client.CreateMailRule(ctx, youtrack.MailRulePayload{
+	Mailbox:    &youtrack.MailboxIDRef{ID: mailbox.ID},
+	Project:    &youtrack.MailboxIDRef{ID: projectID},
+	Maintainer: &youtrack.UserRef{ID: maintainerID},
+	Folder:     ptr("INBOX"),
+	Policy:     &youtrack.MailRulePolicy{Policy: youtrack.MailRulePolicySenderOrNewUser},
+})
+```
+
+Updates are partial: a nil field in `MailboxPayload` or `MailRulePayload` is
+left as it is. Things to know:
+
+- The password and the Microsoft client secret are write-only, and changing a
+  mailbox's host, port or login requires sending the password again.
+- Deleting a mailbox deletes its rules. `DeleteMailbox` waits until YouTrack has
+  applied the delete.
+- `GetMailboxCronSettings`/`UpdateMailboxCronSettings` control the one
+  instance-wide poll schedule; `StartMailboxFetch` polls a mailbox right away.
+
+> **Warning**
+> The endpoints behind these functions (`api/admin/integrations/mailbox/...`)
+> are what YouTrack's administration UI uses. They are **not part of the
+> officially documented REST API** and do not appear in the instance's own
+> OpenAPI spec, so treat them like the apps endpoints above. They were verified
+> against YouTrack 2026.2 (build 19766); run the opt-in suite below after an
+> upgrade.
+
 ## App HTTP handler endpoints
 
 Installed apps can expose their own REST endpoints, which is how an app's
@@ -245,6 +292,7 @@ Set the following environment variables:
 - Optional: `YOUTRACK_TEST_APP_NAME` (app to exercise in the apps suite; defaults to the first app reported)
 - Optional: `YOUTRACK_TEST_PROJECT_LEADER` (leader for the throwaway project the apps suite creates; defaults to `admin`)
 - Optional: `YOUTRACK_RUN_APPS_ALL_PROJECTS_TEST=1` (enables the `EnableAppForAllProjects` check)
+- Optional: `YOUTRACK_RUN_MAILBOX_INTEGRATION_TESTS=1` (enables the mailbox integration suite; it creates mailboxes pointing at a non-existent host plus a throwaway project, briefly changes the mailbox poll schedule and restores it)
 
 Run only integration tests:
 
@@ -260,6 +308,7 @@ The integration suite is split into:
 - YouTrack API suite (`TestIntegrationYouTrack...`): safe YouTrack resource lifecycle checks.
 - Hub-dependent suite (`TestIntegrationHub...`): user lifecycle and group membership checks that rely on Hub semantics.
 - Apps suite (`TestIntegrationYouTrackApp...`): activation/deactivation checks for the undocumented apps endpoints, behind their own switch.
+- Mailbox suite (`TestIntegrationYouTrackMail...`): mailbox and mail rule lifecycle checks for the undocumented mailbox integration endpoints, behind their own switch.
 
 The apps suite creates a throwaway project, runs the attach/enable/disable/
 detach lifecycle against it, and deletes it again, so it leaves no trace on the
