@@ -1,3 +1,26 @@
+## 1.15.0
+FEATURES:
+- Add mailbox integration (`api/admin/integrations/mailbox`, the undocumented endpoints YouTrack's
+  administration UI uses, verified against YouTrack 2026.2):
+  - Mailboxes: `ListMailboxes`, `ListAllMailboxes`, `GetMailboxByID`, `CreateMailbox`, `UpdateMailbox`,
+    `DeleteMailbox`, `TestMailboxConnection` and `ListMailboxFolders`, for IMAP(S) and Microsoft
+    Exchange Online (`OFFICE365`) accounts. Updates are partial. The password and Microsoft client
+    secret are write-only and never sent as `null`, which would clear them. Changing the host, port
+    or login needs the password in the same update.
+  - Mail rules: `ListMailRules`, `ListAllMailRules`, `GetMailRuleByID`, `CreateMailRule`,
+    `UpdateMailRule` and `DeleteMailRule`, with the reporter policy, spam filter mode, subject/body
+    filters and issue/comment commands. Filters are sent with the `$type` YouTrack requires.
+  - Fetching: `GetMailboxStatus`, `StartMailboxFetch` and `CancelMailboxFetch`; the instance-wide
+    poll schedule via `GetMailboxCronSettings`/`UpdateMailboxCronSettings`; and
+    `GetMailboxLimitations`.
+  - `DeleteMailbox` also deletes the mailbox's rules and waits until YouTrack has applied the delete,
+    failing if the mailbox is still there after the wait. YouTrack applies it asynchronously and,
+    meanwhile, answers requests for the mailbox with a 500 "Mailbox[<id>] was removed."; a repeated
+    `DeleteMailbox` treats that as a delete in progress, and `GetMailboxByID` reports it as an error
+    `IsNotFound` recognises.
+  - Methods taking a mailbox or rule ID reject an empty one instead of sending the request to the
+    collection URL, where a POST would create a new entity.
+
 ## 1.14.0
 FEATURES:
 - `SetAppGlobalConfig` returns the whole configuration it leaves, as `GetAppGlobalConfig` does: who may use

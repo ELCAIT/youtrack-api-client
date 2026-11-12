@@ -91,3 +91,14 @@ func (c *Client) ListAllUsers(ctx context.Context) ([]Holder, error) {
 func (c *Client) ListAllGroups(ctx context.Context) ([]Holder, error) {
 	return listAll(ctx, defaultPageSize, c.ListGroups)
 }
+
+// ListAllMailboxes returns every mailbox, paging until the list is exhausted.
+func (c *Client) ListAllMailboxes(ctx context.Context) ([]Mailbox, error) {
+	return listAll(ctx, defaultPageSize, c.ListMailboxes)
+}
+
+// ListAllMailRules returns every mail rule, paging until the list is
+// exhausted.
+func (c *Client) ListAllMailRules(ctx context.Context) ([]MailRule, error) {
+	return listAll(ctx, defaultPageSize, c.ListMailRules)
+}
