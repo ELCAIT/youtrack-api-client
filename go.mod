@@ -1,3 +1,3 @@
 module github.com/elcait/youtrack-api-client
 
-go 1.27.3
+go 1.27.4
