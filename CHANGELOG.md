@@ -1,7 +1,9 @@
 ## 1.16.0
 FEATURES:
-- Add the color of an enum bundle value: `EnumBundleElement.Color` and `EnumBundleValueUpdate.Color`, a
-  `*FieldStyle` (verified against YouTrack 2026.2). Every call that returns enum values now asks for it.
+- Add the color of an enum and of a state bundle value: `EnumBundleElement.Color`, `EnumBundleValueUpdate.Color`,
+  `StateBundleElement.Color` and `StateBundleValueUpdate.Color`, a `*FieldStyle` (verified against YouTrack
+  2026.2, which gives both kinds of bundle the same palette). Every call that returns enum or state values now
+  asks for it.
   - YouTrack colors a value from a fixed palette: the style is picked by its `ID` and the `Background` and
     `Foreground` are the ones of that style. A style sent without an `ID` is refused ("Incorrect style id
     provided"), and an `ID` that is not in the palette is silently replaced by the default style, so a
@@ -9,15 +11,15 @@ FEATURES:
   - Backward compatible: `Color` is only sent when set. A value added without one gets the default style
     (`DefaultFieldStyleID`), and a value replaced without one keeps the color it has. To reset a color, set the
     style `DefaultFieldStyleID`: YouTrack refuses `null`.
-  - A bundle created with `CreateEnumBundle` keeps the colors of its values.
+  - A bundle created with `CreateEnumBundle` or `CreateStateBundle` keeps the colors of its values.
   - The palette of YouTrack 2026.2 has 36 styles, `0` (`DefaultFieldStyleID`) to `35` (`MaxFieldStyleID`), listed
     in the README. `AddEnumBundleValue`, `ReplaceEnumBundleValue`, `CreateEnumBundle` and, for the values without an
-    `ID`, `UpdateEnumBundle` refuse a `Color` whose `ID` is not a number of that range before sending anything,
+    `ID`, `UpdateEnumBundle`, and their state counterparts (`UpdateStateBundleValue` too), refuse a `Color` whose `ID` is not a number of that range before sending anything,
     instead of leaving YouTrack to replace it with the default style. The error names the bundle value and
     `IsInvalidFieldStyleError` reports it, so a caller can tell it from a transient failure. `ValidateFieldStyleID`
     checks an ID before any write. The check does not depend on the `Background` and `Foreground`, and after a
-    YouTrack upgrade that grows the palette `MaxFieldStyleID` has to follow it. `UpdateEnumBundle` does not check
-    the existing values: it is given what YouTrack returned.
+    YouTrack upgrade that grows the palette `MaxFieldStyleID` has to follow it. `UpdateEnumBundle` and
+    `UpdateStateBundle` do not check the existing values: it is given what YouTrack returned.
 
 ## 1.15.0
 FEATURES:

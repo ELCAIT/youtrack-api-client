@@ -137,20 +137,11 @@ func (c *Client) CreateEnumBundle(ctx context.Context, bundle EnumBundle) (*Enum
 	})
 }
 
-// validateNewEnumValues checks the Color of the values that have no ID, the ones YouTrack would create. The
-// existing values are not checked: YouTrack ignores the changes to them, and what it returns for a value can be
-// sent back to it. The error names the value at fault.
+// validateNewEnumValues checks the Color of the new values of an enum bundle, see validateNewValueColors.
 func validateNewEnumValues(values []EnumBundleElement) error {
-	for _, value := range values {
-		if value.ID != "" {
-			continue
-		}
-		if err := validateFieldStyle(value.Color); err != nil {
-			return fmt.Errorf("enum bundle value %q: %w", value.Name, err)
-		}
-	}
-
-	return nil
+	return validateNewValueColors(enumBundleValues.Kind, values, func(v EnumBundleElement) (string, string, *FieldStyle) {
+		return v.ID, v.Name, v.Color
+	})
 }
 
 // UpdateEnumBundle updates a specific enum bundle by ID. The Color of a new value, one without an ID, is

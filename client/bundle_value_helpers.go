@@ -109,3 +109,20 @@ func bundleListsValue[T any](values []T, valueID string, idOf func(T) string) bo
 	}
 	return false
 }
+
+// validateNewValueColors checks the Color of the values that have no ID, the ones YouTrack would create. The
+// existing values are not checked: YouTrack ignores the changes to them, and what it returns for a value can be
+// sent back to it. The error names the value at fault. fields returns the ID, the name and the Color of a value.
+func validateNewValueColors[T any](kind string, values []T, fields func(T) (id, name string, color *FieldStyle)) error {
+	for _, value := range values {
+		id, name, color := fields(value)
+		if id != "" {
+			continue
+		}
+		if err := validateFieldStyle(color); err != nil {
+			return fmt.Errorf("%s bundle value %q: %w", kind, name, err)
+		}
+	}
+
+	return nil
+}

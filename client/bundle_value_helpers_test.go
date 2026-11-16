@@ -93,6 +93,31 @@ func TestEnumAndStateBundleValueRequests(t *testing.T) {
 			},
 		},
 		{
+			name:     "add state value with a color sends the style id",
+			wantPath: stateValues,
+			wantBody: map[string]any{"name": "Done", "isResolved": true, keyColor: map[string]any{keyID: testStyleID}},
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.AddStateBundleValue(ctx, testBundleID, StateBundleElement{
+					Name: "Done", IsResolved: true, Color: &FieldStyle{ID: testStyleID},
+				})
+				return err
+			},
+		},
+		{
+			name:     "replace state value with a color sends the style id",
+			wantPath: stateValues + "/" + testBundleValueID,
+			wantBody: map[string]any{
+				"name": "Done", "localizedName": nil, "description": nil, "isResolved": false, "archived": false,
+				keyColor: map[string]any{keyID: DefaultFieldStyleID},
+			},
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.ReplaceStateBundleValue(ctx, testBundleID, testBundleValueID, StateBundleValueUpdate{
+					Name: "Done", Color: &FieldStyle{ID: DefaultFieldStyleID},
+				})
+				return err
+			},
+		},
+		{
 			name:     "add state value",
 			wantPath: stateValues,
 			wantBody: map[string]any{"name": "Done", "isResolved": true},
@@ -185,6 +210,34 @@ func TestEnumBundleValueColorIsRequestedAndDecoded(t *testing.T) {
 					return nil, err
 				}
 				return []EnumBundleElement{*value}, nil
+			},
+		},
+		{
+			name:       "add state value",
+			wantFields: stateBundleValueFields,
+			response:   colored,
+			call: func(ctx context.Context, c *Client) ([]EnumBundleElement, error) {
+				value, err := c.AddStateBundleValue(ctx, testBundleID, StateBundleElement{Name: testValueName})
+				if err != nil {
+					return nil, err
+				}
+				return []EnumBundleElement{{Color: value.Color}}, nil
+			},
+		},
+		{
+			name:       "get state bundle",
+			wantFields: strings.TrimPrefix(stateBundleFieldsParam, "fields="),
+			response:   bundle,
+			call: func(ctx context.Context, c *Client) ([]EnumBundleElement, error) {
+				got, err := c.GetStateBundleByID(ctx, testBundleID)
+				if err != nil {
+					return nil, err
+				}
+				values := make([]EnumBundleElement, 0, len(got.Values))
+				for _, value := range got.Values {
+					values = append(values, EnumBundleElement{Color: value.Color})
+				}
+				return values, nil
 			},
 		},
 		{
@@ -305,6 +358,49 @@ func TestEnumBundleWritesRefuseAStyleOutsideThePalette(t *testing.T) {
 			call: func(ctx context.Context, c *Client) error {
 				_, err := c.CreateEnumBundle(ctx, EnumBundle{Name: "Priority", Values: []EnumBundleElement{
 					{Name: "Low", Color: &FieldStyle{ID: testStyleID}},
+					{Name: testValueName, Color: outside},
+				}})
+				return err
+			},
+		},
+		{
+			name: "add state value",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.AddStateBundleValue(ctx, testBundleID, StateBundleElement{Name: testValueName, Color: outside})
+				return err
+			},
+		},
+		{
+			name: "replace state value",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.ReplaceStateBundleValue(
+					ctx, testBundleID, testBundleValueID, StateBundleValueUpdate{Name: testValueName, Color: outside})
+				return err
+			},
+		},
+		{
+			name: "update state bundle value",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.UpdateStateBundleValue(
+					ctx, testBundleID, testBundleValueID, StateBundleElement{Name: testValueName, Color: outside})
+				return err
+			},
+		},
+		{
+			name: "create state bundle",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.CreateStateBundle(ctx, StateBundle{Name: "Workflow", Values: []StateBundleElement{
+					{Name: "Open", Color: &FieldStyle{ID: testStyleID}},
+					{Name: testValueName, Color: outside},
+				}})
+				return err
+			},
+		},
+		{
+			name: "update state bundle with a new value",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.UpdateStateBundle(ctx, testBundleID, StateBundle{Values: []StateBundleElement{
+					{ID: testBundleValueID, Name: "Open", Color: outside},
 					{Name: testValueName, Color: outside},
 				}})
 				return err

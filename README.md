@@ -128,8 +128,9 @@ Two further notes for controllers:
 
 ## Colors of bundle values
 
-An enum bundle value is colored with one of the styles of a fixed palette of YouTrack, picked by its ID
-(`EnumBundleElement.Color`, `EnumBundleValueUpdate.Color`, a `*FieldStyle`). A custom hexadecimal color cannot be
+An enum or state bundle value is colored with one of the styles of a fixed palette of YouTrack, picked by its ID
+(`EnumBundleElement.Color`, `EnumBundleValueUpdate.Color`, `StateBundleElement.Color`,
+`StateBundleValueUpdate.Color`, a `*FieldStyle`). A custom hexadecimal color cannot be
 set: YouTrack refuses a style without an ID, and replaces an ID that is not in the palette with the default style
 without an error, so the client refuses an ID that is not a number from `0` to `MaxFieldStyleID` before sending
 it, and reports it with `IsInvalidFieldStyleError`. `ValidateFieldStyleID` checks an ID before any write, for

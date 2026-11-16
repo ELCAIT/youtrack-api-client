@@ -15,7 +15,7 @@ const (
 	stateBundleByIDPath      = "%s/%s/%s?%s"
 	stateBundleFieldsPath    = pathWithFieldsFormat
 	stateBundlePagePath      = "%s/%s?%s&$top=%d&$skip=%d"
-	stateBundleValueFields   = "id,name,localizedName,description,isResolved,archived,ordinal,$type"
+	stateBundleValueFields   = "id,name,localizedName,description,isResolved,archived,ordinal," + fieldStyleFields + ",$type"
 	stateBundleFieldsParam   = "fields=id,name,isUpdateable,values(" + stateBundleValueFields + "),$type"
 	stateBundlePageSize      = 100
 	errMarshalStateBundle    = "failed to marshal state bundle: %w"
@@ -25,28 +25,33 @@ const (
 var errStateBundleNotFound = fmt.Errorf("state bundle %w", ErrNotFound)
 
 // StateBundleElement represents a single state value inside a state bundle.
+//
+// Color is only sent when set. A value added without one gets the default style, see FieldStyle.
 type StateBundleElement struct {
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name,omitempty"`
-	LocalizedName string `json:"localizedName,omitempty"`
-	Description   string `json:"description,omitempty"`
-	IsResolved    bool   `json:"isResolved,omitempty"`
-	Archived      bool   `json:"archived,omitempty"`
-	Ordinal       int    `json:"ordinal,omitempty"`
-	Type          string `json:"$type,omitempty"`
+	ID            string      `json:"id,omitempty"`
+	Name          string      `json:"name,omitempty"`
+	LocalizedName string      `json:"localizedName,omitempty"`
+	Description   string      `json:"description,omitempty"`
+	IsResolved    bool        `json:"isResolved,omitempty"`
+	Archived      bool        `json:"archived,omitempty"`
+	Ordinal       int         `json:"ordinal,omitempty"`
+	Color         *FieldStyle `json:"color,omitempty"`
+	Type          string      `json:"$type,omitempty"`
 }
 
 // StateBundleValueUpdate is the request body for ReplaceStateBundleValue. It
 // replaces every field it carries: a nil LocalizedName or Description is sent
-// as null and clears it, and Archived is always sent. IsResolved is always sent too. Ordinal is only
-// sent when set.
+// as null and clears it, and Archived is always sent. IsResolved is always sent too. Ordinal and Color are only
+// sent when set: a value replaced without a Color keeps the one it has, and a Color is reset by setting the
+// style DefaultFieldStyleID, see FieldStyle.
 type StateBundleValueUpdate struct {
-	Name          string  `json:"name"`
-	LocalizedName *string `json:"localizedName"`
-	Description   *string `json:"description"`
-	IsResolved    bool    `json:"isResolved"`
-	Archived      bool    `json:"archived"`
-	Ordinal       *int    `json:"ordinal,omitempty"`
+	Name          string      `json:"name"`
+	LocalizedName *string     `json:"localizedName"`
+	Description   *string     `json:"description"`
+	IsResolved    bool        `json:"isResolved"`
+	Archived      bool        `json:"archived"`
+	Ordinal       *int        `json:"ordinal,omitempty"`
+	Color         *FieldStyle `json:"color,omitempty"`
 }
 
 // StateBundle represents a YouTrack state bundle.
@@ -120,8 +125,13 @@ func IsStateBundleNotFoundError(err error) bool {
 	return errors.Is(err, errStateBundleNotFound)
 }
 
-// CreateStateBundle creates a state bundle.
+// CreateStateBundle creates a state bundle. The Color of a value whose ID is not in the palette, a number from
+// DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) CreateStateBundle(ctx context.Context, bundle StateBundle) (*StateBundle, error) {
+	if err := validateNewStateValues(bundle.Values); err != nil {
+		return nil, err
+	}
+
 	return createAndDecode(ctx, c, bundle, createConfig{
 		PathFormat: stateBundleFieldsPath,
 		HostURL:    c.HostURL,
@@ -134,8 +144,20 @@ func (c *Client) CreateStateBundle(ctx context.Context, bundle StateBundle) (*St
 	})
 }
 
-// UpdateStateBundle updates a state bundle by ID.
+// validateNewStateValues checks the Color of the new values of a state bundle, see validateNewValueColors.
+func validateNewStateValues(values []StateBundleElement) error {
+	return validateNewValueColors(stateBundleValues.Kind, values, func(v StateBundleElement) (string, string, *FieldStyle) {
+		return v.ID, v.Name, v.Color
+	})
+}
+
+// UpdateStateBundle updates a state bundle by ID. The Color of a new value, one without an ID, is checked like in
+// CreateStateBundle; the existing values are not.
 func (c *Client) UpdateStateBundle(ctx context.Context, id string, bundle StateBundle) (*StateBundle, error) {
+	if err := validateNewStateValues(bundle.Values); err != nil {
+		return nil, err
+	}
+
 	return updateAndDecode(ctx, c, id, bundle, updateConfig{
 		PathFormat: stateBundleByIDPath,
 		HostURL:    c.HostURL,
@@ -159,8 +181,13 @@ func (c *Client) DeleteStateBundle(ctx context.Context, id string) error {
 	})
 }
 
-// UpdateStateBundleValue updates a specific value in a state bundle.
+// UpdateStateBundleValue updates a specific value in a state bundle. A Color whose ID is not in the palette, a
+// number from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) UpdateStateBundleValue(ctx context.Context, bundleID, elementID string, value StateBundleElement) (*StateBundleElement, error) {
+	if err := validateFieldStyle(value.Color); err != nil {
+		return nil, err
+	}
+
 	rb, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf(errMarshalStateBundleVal, err)
@@ -187,13 +214,23 @@ func (c *Client) UpdateStateBundleValue(ctx context.Context, bundleID, elementID
 
 var stateBundleValues = bundleValueEndpoint{APIPath: stateBundlesAPIPath, Fields: stateBundleValueFields, Kind: "state"}
 
-// AddStateBundleValue adds a value to a state bundle.
+// AddStateBundleValue adds a value to a state bundle. A Color whose ID is not in the palette, a number from
+// DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) AddStateBundleValue(ctx context.Context, bundleID string, value StateBundleElement) (*StateBundleElement, error) {
+	if err := validateFieldStyle(value.Color); err != nil {
+		return nil, err
+	}
+
 	return addBundleValue[StateBundleElement](ctx, c, stateBundleValues, bundleID, value)
 }
 
-// ReplaceStateBundleValue replaces the fields of one value in a state bundle.
+// ReplaceStateBundleValue replaces the fields of one value in a state bundle. A Color whose ID is not in the
+// palette, a number from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) ReplaceStateBundleValue(ctx context.Context, bundleID, valueID string, value StateBundleValueUpdate) (*StateBundleElement, error) {
+	if err := validateFieldStyle(value.Color); err != nil {
+		return nil, err
+	}
+
 	return replaceBundleValue[StateBundleElement](ctx, c, stateBundleValues, bundleID, valueID, value)
 }
 
