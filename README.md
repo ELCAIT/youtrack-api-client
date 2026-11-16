@@ -132,9 +132,9 @@ An enum bundle value is colored with one of the styles of a fixed palette of You
 (`EnumBundleElement.Color`, `EnumBundleValueUpdate.Color`, a `*FieldStyle`). A custom hexadecimal color cannot be
 set: YouTrack refuses a style without an ID, and replaces an ID that is not in the palette with the default style
 without an error, so the client refuses an ID that is not a number from `0` to `MaxFieldStyleID` before sending
-it; a style read from YouTrack, which carries its background or foreground, is accepted with any numeric ID, so a
-value read from a newer instance can be sent back. The color is optional: a value added without one gets the default style (`DefaultFieldStyleID`), a value
-replaced without one keeps its color, and a color is reset by setting the default style, since YouTrack refuses
+it, and reports it with `IsInvalidFieldStyleError`. `ValidateFieldStyleID` checks an ID before any write, for
+instance when validating a configuration. The color is optional: a value added without one gets the default style
+(`DefaultFieldStyleID`), a value replaced without one keeps its color, and a color is reset by setting the default style, since YouTrack refuses
 `null`.
 
 The palette of YouTrack 2026.2, read from an instance, has 36 styles. The ID is the only thing to send; the

@@ -15,7 +15,6 @@ const (
 	testStyleID       = "20"
 	testStyleBackdrop = "#DB3B4B"
 	testStyleInk      = "#fff"
-	testColorFields   = "color(id,background,foreground,$type)"
 	testValueName     = "Critical"
 	keyColor          = "color"
 	keyID             = "id"
@@ -169,7 +168,10 @@ func TestEnumBundleValueColorIsRequestedAndDecoded(t *testing.T) {
 			response:   colored,
 			call: func(ctx context.Context, c *Client) ([]EnumBundleElement, error) {
 				value, err := c.AddEnumBundleValue(ctx, testBundleID, EnumBundleElement{Name: testValueName})
-				return []EnumBundleElement{*value}, err
+				if err != nil {
+					return nil, err
+				}
+				return []EnumBundleElement{*value}, nil
 			},
 		},
 		{
@@ -179,7 +181,10 @@ func TestEnumBundleValueColorIsRequestedAndDecoded(t *testing.T) {
 			call: func(ctx context.Context, c *Client) ([]EnumBundleElement, error) {
 				value, err := c.ReplaceEnumBundleValue(
 					ctx, testBundleID, testBundleValueID, EnumBundleValueUpdate{Name: testValueName})
-				return []EnumBundleElement{*value}, err
+				if err != nil {
+					return nil, err
+				}
+				return []EnumBundleElement{*value}, nil
 			},
 		},
 		{
@@ -204,9 +209,6 @@ func TestEnumBundleValueColorIsRequestedAndDecoded(t *testing.T) {
 				if got := r.URL.Query().Get("fields"); got != tc.wantFields {
 					t.Errorf("unexpected fields: got %s, want %s", got, tc.wantFields)
 				}
-				if !strings.Contains(tc.wantFields, testColorFields) {
-					t.Errorf("fields %s do not ask for the color %s", tc.wantFields, testColorFields)
-				}
 				encodeJSON(t, w, tc.response)
 			})
 			defer server.Close()
@@ -216,7 +218,9 @@ func TestEnumBundleValueColorIsRequestedAndDecoded(t *testing.T) {
 				t.Fatalf(fmtUnexpectedError, err)
 			}
 
-			want := FieldStyle{ID: testStyleID, Background: testStyleBackdrop, Foreground: testStyleInk, Type: "FieldStyle"}
+			want := FieldStyle{
+				ID: testStyleID, Background: testStyleBackdrop, Foreground: testStyleInk, Type: "FieldStyle",
+			}
 			if values[0].Color == nil || *values[0].Color != want {
 				t.Errorf("unexpected color: got %+v, want %+v", values[0].Color, want)
 			}
@@ -240,15 +244,13 @@ func TestValidateFieldStyle(t *testing.T) {
 		{name: "default style", style: &FieldStyle{ID: DefaultFieldStyleID}},
 		{name: "style of the palette", style: &FieldStyle{ID: testStyleID}},
 		{name: "last style of the palette", style: &FieldStyle{ID: strconv.Itoa(MaxFieldStyleID)}},
-		{name: "style read from YouTrack", style: &FieldStyle{
+		{name: "style with a background and a foreground", style: &FieldStyle{
 			ID: testStyleID, Background: testStyleBackdrop, Foreground: testStyleInk, Type: "FieldStyle",
 		}},
 		{name: "first ID above the palette", style: &FieldStyle{ID: strconv.Itoa(MaxFieldStyleID + 1)}, wantErr: true},
-		{name: "ID above the palette read from YouTrack", style: &FieldStyle{
+		{name: "ID above the palette with a background and a foreground", style: &FieldStyle{
 			ID: strconv.Itoa(MaxFieldStyleID + 1), Background: testStyleBackdrop, Foreground: testStyleInk,
-		}},
-		{name: "negative ID read from YouTrack", style: &FieldStyle{ID: "-1", Background: testStyleBackdrop}, wantErr: true},
-		{name: "ID that is not a number read from YouTrack", style: &FieldStyle{ID: "red", Foreground: testStyleInk}, wantErr: true},
+		}, wantErr: true},
 		{name: "negative ID", style: &FieldStyle{ID: "-1"}, wantErr: true},
 		{name: "no ID", style: &FieldStyle{Background: testStyleBackdrop, Foreground: testStyleInk}, wantErr: true},
 		{name: "ID that is not a number", style: &FieldStyle{ID: "red"}, wantErr: true},
@@ -264,6 +266,9 @@ func TestValidateFieldStyle(t *testing.T) {
 			err := validateFieldStyle(tc.style)
 			if tc.wantErr != (err != nil) {
 				t.Fatalf("unexpected result: wantErr %v, got %v", tc.wantErr, err)
+			}
+			if tc.wantErr && !IsInvalidFieldStyleError(err) {
+				t.Errorf("the error is not an invalid field style error: %v", err)
 			}
 		})
 	}
@@ -305,6 +310,16 @@ func TestEnumBundleWritesRefuseAStyleOutsideThePalette(t *testing.T) {
 				return err
 			},
 		},
+		{
+			name: "update enum bundle with a new value",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.UpdateEnumBundle(ctx, testBundleID, EnumBundle{Values: []EnumBundleElement{
+					{ID: testBundleValueID, Name: "Low", Color: outside},
+					{Name: testValueName, Color: outside},
+				}})
+				return err
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -316,8 +331,12 @@ func TestEnumBundleWritesRefuseAStyleOutsideThePalette(t *testing.T) {
 			})
 			defer server.Close()
 
-			if err := tc.call(context.Background(), client); err == nil {
+			err := tc.call(context.Background(), client)
+			if err == nil {
 				t.Fatal(errExpectedError)
+			}
+			if !IsInvalidFieldStyleError(err) {
+				t.Errorf("the error is not an invalid field style error: %v", err)
 			}
 		})
 	}

@@ -11,11 +11,13 @@ FEATURES:
     style `DefaultFieldStyleID`: YouTrack refuses `null`.
   - A bundle created with `CreateEnumBundle` keeps the colors of its values.
   - The palette of YouTrack 2026.2 has 36 styles, `0` (`DefaultFieldStyleID`) to `35` (`MaxFieldStyleID`), listed
-    in the README. `AddEnumBundleValue`, `ReplaceEnumBundleValue` and `CreateEnumBundle` refuse a `Color` whose
-    `ID` is not a number of that range before sending anything, instead of leaving YouTrack to replace it with the
-    default style. A `Color` read from YouTrack (it carries `Background` or `Foreground`) is accepted with any
-    numeric `ID`, so a value read from a newer YouTrack with a larger palette can be sent back.
-    `UpdateEnumBundle` does not check it: it is given what YouTrack returned.
+    in the README. `AddEnumBundleValue`, `ReplaceEnumBundleValue`, `CreateEnumBundle` and, for the values without an
+    `ID`, `UpdateEnumBundle` refuse a `Color` whose `ID` is not a number of that range before sending anything,
+    instead of leaving YouTrack to replace it with the default style. The error names the bundle value and
+    `IsInvalidFieldStyleError` reports it, so a caller can tell it from a transient failure. `ValidateFieldStyleID`
+    checks an ID before any write. The check does not depend on the `Background` and `Foreground`, and after a
+    YouTrack upgrade that grows the palette `MaxFieldStyleID` has to follow it. `UpdateEnumBundle` does not check
+    the existing values: it is given what YouTrack returned.
 
 ## 1.15.0
 FEATURES:

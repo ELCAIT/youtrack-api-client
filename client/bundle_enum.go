@@ -119,14 +119,10 @@ func IsEnumBundleNotFoundError(err error) bool {
 }
 
 // CreateEnumBundle creates a new enum bundle. The Color of a value whose ID is not in the palette, a number
-// from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle; a Color read from YouTrack
-// is accepted with any numeric ID. UpdateEnumBundle does not check it: YouTrack ignores the changes to the existing values it is given, and what it returns for a value
-// can be sent back to it.
+// from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) CreateEnumBundle(ctx context.Context, bundle EnumBundle) (*EnumBundle, error) {
-	for _, value := range bundle.Values {
-		if err := validateFieldStyle(value.Color); err != nil {
-			return nil, err
-		}
+	if err := validateNewEnumValues(bundle.Values); err != nil {
+		return nil, err
 	}
 
 	return createAndDecode(ctx, c, bundle, createConfig{
@@ -141,8 +137,29 @@ func (c *Client) CreateEnumBundle(ctx context.Context, bundle EnumBundle) (*Enum
 	})
 }
 
-// UpdateEnumBundle updates a specific enum bundle by ID.
+// validateNewEnumValues checks the Color of the values that have no ID, the ones YouTrack would create. The
+// existing values are not checked: YouTrack ignores the changes to them, and what it returns for a value can be
+// sent back to it. The error names the value at fault.
+func validateNewEnumValues(values []EnumBundleElement) error {
+	for _, value := range values {
+		if value.ID != "" {
+			continue
+		}
+		if err := validateFieldStyle(value.Color); err != nil {
+			return fmt.Errorf("enum bundle value %q: %w", value.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// UpdateEnumBundle updates a specific enum bundle by ID. The Color of a new value, one without an ID, is
+// checked like in CreateEnumBundle; the existing values are not.
 func (c *Client) UpdateEnumBundle(ctx context.Context, id string, bundle EnumBundle) (*EnumBundle, error) {
+	if err := validateNewEnumValues(bundle.Values); err != nil {
+		return nil, err
+	}
+
 	return updateAndDecode(ctx, c, id, bundle, updateConfig{
 		PathFormat: enumBundleByIDPath,
 		HostURL:    c.HostURL,
@@ -169,8 +186,7 @@ func (c *Client) DeleteEnumBundle(ctx context.Context, id string) error {
 var enumBundleValues = bundleValueEndpoint{APIPath: enumBundlesAPIPath, Fields: enumBundleValueFields, Kind: "enum"}
 
 // AddEnumBundleValue adds a value to an enum bundle. A Color whose ID is not in the palette, a number from
-// DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle; a Color read from YouTrack is
-// accepted with any numeric ID.
+// DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) AddEnumBundleValue(ctx context.Context, bundleID string, value EnumBundleElement) (*EnumBundleElement, error) {
 	if err := validateFieldStyle(value.Color); err != nil {
 		return nil, err
@@ -180,8 +196,7 @@ func (c *Client) AddEnumBundleValue(ctx context.Context, bundleID string, value 
 }
 
 // ReplaceEnumBundleValue replaces the fields of one value in an enum bundle. A Color whose ID is not in the
-// palette, a number from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle; a Color
-// read from YouTrack is accepted with any numeric ID, so a value read and sent back never fails.
+// palette, a number from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) ReplaceEnumBundleValue(ctx context.Context, bundleID, valueID string, value EnumBundleValueUpdate) (*EnumBundleElement, error) {
 	if err := validateFieldStyle(value.Color); err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 package youtrack
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 )
@@ -16,8 +17,10 @@ const (
 	// DefaultFieldStyleID to this one. The palette is listed in the README.
 	MaxFieldStyleID = 35
 
-	errFieldStyleID = "field style id %q is not in the palette: it must be a number from %s to %d"
+	errFieldStyleID = "%w: id %q is not in the palette, it must be a number from %s to %d"
 )
+
+var errInvalidFieldStyle = errors.New("invalid field style")
 
 // FieldStyle is the color of a bundle value.
 //
@@ -31,8 +34,8 @@ const (
 //
 // A write of a value that carries a style whose ID is not a number from DefaultFieldStyleID to
 // MaxFieldStyleID is refused before it is sent, rather than left to YouTrack to replace the ID with the default
-// one without an error. A style that carries a Background or a Foreground was read from YouTrack, which may
-// have a larger palette than MaxFieldStyleID: it is accepted with any non-negative numeric ID.
+// one without an error, see ValidateFieldStyleID. A style read from an instance with a larger palette, which
+// has an ID above MaxFieldStyleID, is refused too until MaxFieldStyleID follows the palette.
 type FieldStyle struct {
 	ID         string `json:"id,omitempty"`
 	Background string `json:"background,omitempty"`
@@ -40,21 +43,29 @@ type FieldStyle struct {
 	Type       string `json:"$type,omitempty"`
 }
 
+// IsInvalidFieldStyleError checks whether an error indicates that a style was refused before being sent because
+// its ID is not in the palette. The failure is permanent: sending the same style again fails the same way.
+func IsInvalidFieldStyleError(err error) bool {
+	return errors.Is(err, errInvalidFieldStyle)
+}
+
+// ValidateFieldStyleID refuses a style ID that is not in the palette: a number from DefaultFieldStyleID to
+// MaxFieldStyleID, written the way YouTrack returns it, without sign or leading zeros. It lets a caller check a
+// configured ID before any write, and the error is reported by IsInvalidFieldStyleError.
+func ValidateFieldStyleID(id string) error {
+	number, err := strconv.Atoi(id)
+	if err != nil || number < 0 || number > MaxFieldStyleID || strconv.Itoa(number) != id {
+		return fmt.Errorf(errFieldStyleID, errInvalidFieldStyle, id, DefaultFieldStyleID, MaxFieldStyleID)
+	}
+
+	return nil
+}
+
 // validateFieldStyle refuses a style whose ID is not in the palette. A nil style, which is not sent, is valid.
-// The ID has to be written the way YouTrack returns it, as a number without sign or leading zeros. A style read
-// from YouTrack, which carries its Background or Foreground, may have an ID above MaxFieldStyleID: it comes from
-// a palette larger than the one the client knows, and sending it back must not fail.
 func validateFieldStyle(style *FieldStyle) error {
 	if style == nil {
 		return nil
 	}
 
-	id, err := strconv.Atoi(style.ID)
-	readFromYouTrack := style.Background != "" || style.Foreground != ""
-	aboveKnownPalette := id > MaxFieldStyleID && !readFromYouTrack
-	if err != nil || id < 0 || aboveKnownPalette || strconv.Itoa(id) != style.ID {
-		return fmt.Errorf(errFieldStyleID, style.ID, DefaultFieldStyleID, MaxFieldStyleID)
-	}
-
-	return nil
+	return ValidateFieldStyleID(style.ID)
 }

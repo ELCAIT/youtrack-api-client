@@ -41,6 +41,10 @@ func TestIntegrationEnumBundleColorPalette(t *testing.T) {
 		t.Fatalf("failed to read enum bundle: %v", err)
 	}
 
+	if len(read.Values) != MaxFieldStyleID+1 {
+		t.Fatalf("expected %d values in the bundle read back, got %d", MaxFieldStyleID+1, len(read.Values))
+	}
+
 	for _, value := range read.Values {
 		var want string
 		if _, err := fmt.Sscanf(value.Name, "style-%s", &want); err != nil {
