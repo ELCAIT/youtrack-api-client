@@ -1,3 +1,22 @@
+## 1.16.0
+FEATURES:
+- Add the color of an enum bundle value: `EnumBundleElement.Color` and `EnumBundleValueUpdate.Color`, a
+  `*FieldStyle` (verified against YouTrack 2026.2). Every call that returns enum values now asks for it.
+  - YouTrack colors a value from a fixed palette: the style is picked by its `ID` and the `Background` and
+    `Foreground` are the ones of that style. A style sent without an `ID` is refused ("Incorrect style id
+    provided"), and an `ID` that is not in the palette is silently replaced by the default style, so a
+    custom hexadecimal color cannot be set.
+  - Backward compatible: `Color` is only sent when set. A value added without one gets the default style
+    (`DefaultFieldStyleID`), and a value replaced without one keeps the color it has. To reset a color, set the
+    style `DefaultFieldStyleID`: YouTrack refuses `null`.
+  - A bundle created with `CreateEnumBundle` keeps the colors of its values.
+  - The palette of YouTrack 2026.2 has 36 styles, `0` (`DefaultFieldStyleID`) to `35` (`MaxFieldStyleID`), listed
+    in the README. `AddEnumBundleValue`, `ReplaceEnumBundleValue` and `CreateEnumBundle` refuse a `Color` whose
+    `ID` is not a number of that range before sending anything, instead of leaving YouTrack to replace it with the
+    default style. A `Color` read from YouTrack (it carries `Background` or `Foreground`) is accepted with any
+    numeric `ID`, so a value read from a newer YouTrack with a larger palette can be sent back.
+    `UpdateEnumBundle` does not check it: it is given what YouTrack returned.
+
 ## 1.15.0
 FEATURES:
 - Add mailbox integration (`api/admin/integrations/mailbox`, the undocumented endpoints YouTrack's

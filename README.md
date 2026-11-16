@@ -126,6 +126,45 @@ Two further notes for controllers:
   promptly on cancellation, so they neither stall a worker goroutine nor delay
   manager shutdown.
 
+## Colors of bundle values
+
+An enum bundle value is colored with one of the styles of a fixed palette of YouTrack, picked by its ID
+(`EnumBundleElement.Color`, `EnumBundleValueUpdate.Color`, a `*FieldStyle`). A custom hexadecimal color cannot be
+set: YouTrack refuses a style without an ID, and replaces an ID that is not in the palette with the default style
+without an error, so the client refuses an ID that is not a number from `0` to `MaxFieldStyleID` before sending
+it; a style read from YouTrack, which carries its background or foreground, is accepted with any numeric ID, so a
+value read from a newer instance can be sent back. The color is optional: a value added without one gets the default style (`DefaultFieldStyleID`), a value
+replaced without one keeps its color, and a color is reset by setting the default style, since YouTrack refuses
+`null`.
+
+The palette of YouTrack 2026.2, read from an instance, has 36 styles. The ID is the only thing to send; the
+background and foreground are what YouTrack returns for it:
+
+| ID | Background | Foreground | | ID | Background | Foreground |
+|---:|------------|------------|-|---:|------------|------------|
+| 0  | `#fff`     | `#444`     | | 18 | `#FED277`  | `#734803`  |
+| 1  | `#893E13`  | `#FDE6D4`  | | 19 | `#F477BD`  | `#62073A`  |
+| 2  | `#B95716`  | `#FFF0E5`  | | 20 | `#DB3B4B`  | `#fff`     |
+| 3  | `#1F8039`  | `#E3F7E7`  | | 21 | `#D0DFFC`  | `#27498A`  |
+| 4  | `#315FBD`  | `#fff`     | | 22 | `#FCC3E2`  | `#C01173`  |
+| 5  | `#8b0d55`  | `#fed9ee`  | | 23 | `#EBDCAB`  | `#514931`  |
+| 6  | `#27498a`  | `#E3D3FF`  | | 24 | `#7BCCCF`  | `#053537`  |
+| 7  | `#068287`  | `#fff`     | | 25 | `#A2BEF8`  | `#203C72`  |
+| 8  | `#932530`  | `#ffebec`  | | 26 | `#DBC482`  | `#514931`  |
+| 9  | `#C01173`  | `#FFDFF1`  | | 27 | `#C9CCD6`  | `#27282E`  |
+| 10 | `#208A3C`  | `#fff`     | | 28 | `#039BA1`  | `#FFFFFF`  |
+| 11 | `#E56D17`  | `#351706`  | | 29 | `#3574F0`  | `#FFF`     |
+| 12 | `#E20F86`  | `#fff`     | | 30 | `#818594`  | `#FFFFFF`  |
+| 13 | `#FFAF0F`  | `#523402`  | | 31 | `#494B57`  | `#fff`     |
+| 14 | `#89C398`  | `#2B3F2C`  | | 32 | `#1a5b2c`  | `#fff`     |
+| 15 | `#B6E5E7`  | `#096a6e`  | | 33 | `#096a6e`  | `#daf4f5`  |
+| 16 | `#f7f8fa`  | `#27282e`  | | 34 | `#5d431d`  | `#FAECC0`  |
+| 17 | `#C0E3C8`  | `#1a5b2c`  | | 35 | `#27282E`  | `#fff`     |
+
+The palette belongs to the YouTrack version. After an upgrade, create a bundle with one value per ID and read the
+colors back: an ID that is not in the palette comes back as `0`. `MaxFieldStyleID` has to follow the palette;
+`TestIntegrationEnumBundleColorPalette` does this check against the instance.
+
 ## Apps (undocumented API)
 
 Apps can be enabled or disabled per project, or enabled for every project at once:

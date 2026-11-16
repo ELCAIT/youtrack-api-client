@@ -3,6 +3,8 @@ package youtrack
 import (
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -10,6 +12,13 @@ import (
 const (
 	testBundleID      = "66-1"
 	testBundleValueID = "67-1"
+	testStyleID       = "20"
+	testStyleBackdrop = "#DB3B4B"
+	testStyleInk      = "#fff"
+	testColorFields   = "color(id,background,foreground,$type)"
+	testValueName     = "Critical"
+	keyColor          = "color"
+	keyID             = "id"
 )
 
 // TestEnumAndStateBundleValueRequests checks the per-value calls address the
@@ -42,6 +51,45 @@ func TestEnumAndStateBundleValueRequests(t *testing.T) {
 			wantBody: map[string]any{"name": "Critical", "localizedName": nil, "description": nil, "archived": false},
 			call: func(ctx context.Context, c *Client) error {
 				_, err := c.ReplaceEnumBundleValue(ctx, testBundleID, testBundleValueID, EnumBundleValueUpdate{Name: "Critical"})
+				return err
+			},
+		},
+		{
+			name:     "add enum value with a color sends the style id",
+			wantPath: enumValues,
+			wantBody: map[string]any{"name": testValueName, keyColor: map[string]any{keyID: testStyleID}},
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.AddEnumBundleValue(ctx, testBundleID, EnumBundleElement{
+					Name: testValueName, Color: &FieldStyle{ID: testStyleID},
+				})
+				return err
+			},
+		},
+		{
+			name:     "replace enum value with a color sends the style id",
+			wantPath: enumValues + "/" + testBundleValueID,
+			wantBody: map[string]any{
+				"name": testValueName, "localizedName": nil, "description": nil, "archived": false,
+				keyColor: map[string]any{keyID: testStyleID},
+			},
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.ReplaceEnumBundleValue(ctx, testBundleID, testBundleValueID, EnumBundleValueUpdate{
+					Name: testValueName, Color: &FieldStyle{ID: testStyleID},
+				})
+				return err
+			},
+		},
+		{
+			name:     "replace enum value resets the color with the default style",
+			wantPath: enumValues + "/" + testBundleValueID,
+			wantBody: map[string]any{
+				"name": testValueName, "localizedName": nil, "description": nil, "archived": false,
+				keyColor: map[string]any{keyID: DefaultFieldStyleID},
+			},
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.ReplaceEnumBundleValue(ctx, testBundleID, testBundleValueID, EnumBundleValueUpdate{
+					Name: testValueName, Color: &FieldStyle{ID: DefaultFieldStyleID},
+				})
 				return err
 			},
 		},
@@ -89,6 +137,187 @@ func TestEnumAndStateBundleValueRequests(t *testing.T) {
 
 			if err := tc.call(context.Background(), client); err != nil {
 				t.Fatalf(fmtUnexpectedError, err)
+			}
+		})
+	}
+}
+
+// TestEnumBundleValueColorIsRequestedAndDecoded checks that every call returning enum values asks YouTrack
+// for the color, which it only returns when it is named in the fields, and decodes it. A value the server
+// reports without a color is decoded with a nil Color.
+func TestEnumBundleValueColorIsRequestedAndDecoded(t *testing.T) {
+	t.Parallel()
+
+	colored := map[string]any{
+		keyID: testBundleValueID, "name": testValueName,
+		keyColor: map[string]any{
+			keyID: testStyleID, "background": testStyleBackdrop, "foreground": testStyleInk, "$type": "FieldStyle",
+		},
+	}
+	plain := map[string]any{keyID: "67-2", "name": "Minor"}
+	bundle := map[string]any{keyID: testBundleID, "values": []any{colored, plain}}
+
+	tests := []struct {
+		name       string
+		wantFields string
+		response   any
+		call       func(context.Context, *Client) ([]EnumBundleElement, error)
+	}{
+		{
+			name:       "add enum value",
+			wantFields: enumBundleValueFields,
+			response:   colored,
+			call: func(ctx context.Context, c *Client) ([]EnumBundleElement, error) {
+				value, err := c.AddEnumBundleValue(ctx, testBundleID, EnumBundleElement{Name: testValueName})
+				return []EnumBundleElement{*value}, err
+			},
+		},
+		{
+			name:       "replace enum value",
+			wantFields: enumBundleValueFields,
+			response:   colored,
+			call: func(ctx context.Context, c *Client) ([]EnumBundleElement, error) {
+				value, err := c.ReplaceEnumBundleValue(
+					ctx, testBundleID, testBundleValueID, EnumBundleValueUpdate{Name: testValueName})
+				return []EnumBundleElement{*value}, err
+			},
+		},
+		{
+			name:       "get enum bundle",
+			wantFields: strings.TrimPrefix(enumBundleFieldsParam, "fields="),
+			response:   bundle,
+			call: func(ctx context.Context, c *Client) ([]EnumBundleElement, error) {
+				got, err := c.GetEnumBundleByID(ctx, testBundleID)
+				if err != nil {
+					return nil, err
+				}
+				return got.Values, nil
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Query().Get("fields"); got != tc.wantFields {
+					t.Errorf("unexpected fields: got %s, want %s", got, tc.wantFields)
+				}
+				if !strings.Contains(tc.wantFields, testColorFields) {
+					t.Errorf("fields %s do not ask for the color %s", tc.wantFields, testColorFields)
+				}
+				encodeJSON(t, w, tc.response)
+			})
+			defer server.Close()
+
+			values, err := tc.call(context.Background(), client)
+			if err != nil {
+				t.Fatalf(fmtUnexpectedError, err)
+			}
+
+			want := FieldStyle{ID: testStyleID, Background: testStyleBackdrop, Foreground: testStyleInk, Type: "FieldStyle"}
+			if values[0].Color == nil || *values[0].Color != want {
+				t.Errorf("unexpected color: got %+v, want %+v", values[0].Color, want)
+			}
+			if len(values) > 1 && values[1].Color != nil {
+				t.Errorf("a value without color must decode a nil Color, got %+v", values[1].Color)
+			}
+		})
+	}
+}
+
+// TestValidateFieldStyle covers the IDs of the palette and the ones that are not.
+func TestValidateFieldStyle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		style   *FieldStyle
+		wantErr bool
+	}{
+		{name: "no style is not sent", style: nil},
+		{name: "default style", style: &FieldStyle{ID: DefaultFieldStyleID}},
+		{name: "style of the palette", style: &FieldStyle{ID: testStyleID}},
+		{name: "last style of the palette", style: &FieldStyle{ID: strconv.Itoa(MaxFieldStyleID)}},
+		{name: "style read from YouTrack", style: &FieldStyle{
+			ID: testStyleID, Background: testStyleBackdrop, Foreground: testStyleInk, Type: "FieldStyle",
+		}},
+		{name: "first ID above the palette", style: &FieldStyle{ID: strconv.Itoa(MaxFieldStyleID + 1)}, wantErr: true},
+		{name: "ID above the palette read from YouTrack", style: &FieldStyle{
+			ID: strconv.Itoa(MaxFieldStyleID + 1), Background: testStyleBackdrop, Foreground: testStyleInk,
+		}},
+		{name: "negative ID read from YouTrack", style: &FieldStyle{ID: "-1", Background: testStyleBackdrop}, wantErr: true},
+		{name: "ID that is not a number read from YouTrack", style: &FieldStyle{ID: "red", Foreground: testStyleInk}, wantErr: true},
+		{name: "negative ID", style: &FieldStyle{ID: "-1"}, wantErr: true},
+		{name: "no ID", style: &FieldStyle{Background: testStyleBackdrop, Foreground: testStyleInk}, wantErr: true},
+		{name: "ID that is not a number", style: &FieldStyle{ID: "red"}, wantErr: true},
+		{name: "ID with a leading zero", style: &FieldStyle{ID: "05"}, wantErr: true},
+		{name: "ID with a sign", style: &FieldStyle{ID: "+5"}, wantErr: true},
+		{name: "ID with a fraction", style: &FieldStyle{ID: "1.5"}, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateFieldStyle(tc.style)
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("unexpected result: wantErr %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestEnumBundleWritesRefuseAStyleOutsideThePalette checks that a style YouTrack would silently replace with
+// the default one is refused before any request is sent.
+func TestEnumBundleWritesRefuseAStyleOutsideThePalette(t *testing.T) {
+	t.Parallel()
+
+	outside := &FieldStyle{ID: strconv.Itoa(MaxFieldStyleID + 1)}
+
+	tests := []struct {
+		name string
+		call func(context.Context, *Client) error
+	}{
+		{
+			name: "add enum value",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.AddEnumBundleValue(ctx, testBundleID, EnumBundleElement{Name: testValueName, Color: outside})
+				return err
+			},
+		},
+		{
+			name: "replace enum value",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.ReplaceEnumBundleValue(
+					ctx, testBundleID, testBundleValueID, EnumBundleValueUpdate{Name: testValueName, Color: outside})
+				return err
+			},
+		},
+		{
+			name: "create enum bundle",
+			call: func(ctx context.Context, c *Client) error {
+				_, err := c.CreateEnumBundle(ctx, EnumBundle{Name: "Priority", Values: []EnumBundleElement{
+					{Name: "Low", Color: &FieldStyle{ID: testStyleID}},
+					{Name: testValueName, Color: outside},
+				}})
+				return err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, server := newTestClient(t, func(_ http.ResponseWriter, r *http.Request) {
+				t.Errorf("a request was sent: %s %s", r.Method, r.URL.Path)
+			})
+			defer server.Close()
+
+			if err := tc.call(context.Background(), client); err == nil {
+				t.Fatal(errExpectedError)
 			}
 		})
 	}
