@@ -11,7 +11,7 @@ const (
 	enumBundleByIDPath    = "%s/%s/%s?%s"
 	enumBundleFieldsPath  = pathWithFieldsFormat
 	enumBundlePagePath    = "%s/%s?%s&$top=%d&$skip=%d"
-	enumBundleValueFields = "id,name,localizedName,description,archived,ordinal,$type"
+	enumBundleValueFields = "id,name,localizedName,description,archived,ordinal," + fieldStyleFields + ",$type"
 	enumBundleFieldsParam = "fields=id,name,isUpdateable,values(" + enumBundleValueFields + "),$type"
 	enumBundlePageSize    = 100
 	errMarshalEnumBundle  = "failed to marshal enum bundle: %w"
@@ -20,26 +20,31 @@ const (
 var errEnumBundleNotFound = fmt.Errorf("enum bundle %w", ErrNotFound)
 
 // EnumBundleElement represents a single value inside an enum bundle.
+//
+// Color is only sent when set. A value added without one gets the default style, see FieldStyle.
 type EnumBundleElement struct {
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name,omitempty"`
-	LocalizedName string `json:"localizedName,omitempty"`
-	Description   string `json:"description,omitempty"`
-	Archived      bool   `json:"archived,omitempty"`
-	Ordinal       int    `json:"ordinal,omitempty"`
-	Type          string `json:"$type,omitempty"`
+	ID            string      `json:"id,omitempty"`
+	Name          string      `json:"name,omitempty"`
+	LocalizedName string      `json:"localizedName,omitempty"`
+	Description   string      `json:"description,omitempty"`
+	Archived      bool        `json:"archived,omitempty"`
+	Ordinal       int         `json:"ordinal,omitempty"`
+	Color         *FieldStyle `json:"color,omitempty"`
+	Type          string      `json:"$type,omitempty"`
 }
 
 // EnumBundleValueUpdate is the request body for ReplaceEnumBundleValue. It
 // replaces every field it carries: a nil LocalizedName or Description is sent
-// as null and clears it, and Archived is always sent. Ordinal is only
-// sent when set.
+// as null and clears it, and Archived is always sent. Ordinal and Color are
+// only sent when set: a value replaced without a Color keeps the one it has,
+// and a Color is reset by setting the style DefaultFieldStyleID, see FieldStyle.
 type EnumBundleValueUpdate struct {
-	Name          string  `json:"name"`
-	LocalizedName *string `json:"localizedName"`
-	Description   *string `json:"description"`
-	Archived      bool    `json:"archived"`
-	Ordinal       *int    `json:"ordinal,omitempty"`
+	Name          string      `json:"name"`
+	LocalizedName *string     `json:"localizedName"`
+	Description   *string     `json:"description"`
+	Archived      bool        `json:"archived"`
+	Ordinal       *int        `json:"ordinal,omitempty"`
+	Color         *FieldStyle `json:"color,omitempty"`
 }
 
 // EnumBundle represents a YouTrack enum bundle.
@@ -113,8 +118,13 @@ func IsEnumBundleNotFoundError(err error) bool {
 	return errors.Is(err, errEnumBundleNotFound)
 }
 
-// CreateEnumBundle creates a new enum bundle.
+// CreateEnumBundle creates a new enum bundle. The Color of a value whose ID is not in the palette, a number
+// from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) CreateEnumBundle(ctx context.Context, bundle EnumBundle) (*EnumBundle, error) {
+	if err := validateNewEnumValues(bundle.Values); err != nil {
+		return nil, err
+	}
+
 	return createAndDecode(ctx, c, bundle, createConfig{
 		PathFormat: enumBundleFieldsPath,
 		HostURL:    c.HostURL,
@@ -127,8 +137,20 @@ func (c *Client) CreateEnumBundle(ctx context.Context, bundle EnumBundle) (*Enum
 	})
 }
 
-// UpdateEnumBundle updates a specific enum bundle by ID.
+// validateNewEnumValues checks the Color of the new values of an enum bundle, see validateNewValueColors.
+func validateNewEnumValues(values []EnumBundleElement) error {
+	return validateNewValueColors(enumBundleValues.Kind, values, func(v EnumBundleElement) (string, string, *FieldStyle) {
+		return v.ID, v.Name, v.Color
+	})
+}
+
+// UpdateEnumBundle updates a specific enum bundle by ID. The Color of a new value, one without an ID, is
+// checked like in CreateEnumBundle; the existing values are not.
 func (c *Client) UpdateEnumBundle(ctx context.Context, id string, bundle EnumBundle) (*EnumBundle, error) {
+	if err := validateNewEnumValues(bundle.Values); err != nil {
+		return nil, err
+	}
+
 	return updateAndDecode(ctx, c, id, bundle, updateConfig{
 		PathFormat: enumBundleByIDPath,
 		HostURL:    c.HostURL,
@@ -154,13 +176,23 @@ func (c *Client) DeleteEnumBundle(ctx context.Context, id string) error {
 
 var enumBundleValues = bundleValueEndpoint{APIPath: enumBundlesAPIPath, Fields: enumBundleValueFields, Kind: "enum"}
 
-// AddEnumBundleValue adds a value to an enum bundle.
+// AddEnumBundleValue adds a value to an enum bundle. A Color whose ID is not in the palette, a number from
+// DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) AddEnumBundleValue(ctx context.Context, bundleID string, value EnumBundleElement) (*EnumBundleElement, error) {
+	if err := validateFieldStyle(value.Color); err != nil {
+		return nil, err
+	}
+
 	return addBundleValue[EnumBundleElement](ctx, c, enumBundleValues, bundleID, value)
 }
 
-// ReplaceEnumBundleValue replaces the fields of one value in an enum bundle.
+// ReplaceEnumBundleValue replaces the fields of one value in an enum bundle. A Color whose ID is not in the
+// palette, a number from DefaultFieldStyleID (0) to MaxFieldStyleID (35), is refused, see FieldStyle.
 func (c *Client) ReplaceEnumBundleValue(ctx context.Context, bundleID, valueID string, value EnumBundleValueUpdate) (*EnumBundleElement, error) {
+	if err := validateFieldStyle(value.Color); err != nil {
+		return nil, err
+	}
+
 	return replaceBundleValue[EnumBundleElement](ctx, c, enumBundleValues, bundleID, valueID, value)
 }
 
