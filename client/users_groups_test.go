@@ -680,6 +680,96 @@ func TestAddUserToGroupFallbackOnMethodNotAllowed(t *testing.T) {
 	}
 }
 
+// TestMembershipResolvesYouTrackIDs checks that a YouTrack group or user id is
+// resolved to its Hub id (ringId) before the Hub membership endpoints are called,
+// since those answer a YouTrack id with 404/405 (YouTrack 2026.3).
+func TestMembershipResolvesYouTrackIDs(t *testing.T) {
+	t.Parallel()
+
+	const (
+		ytGroupID  = "4-241"
+		ytUserID   = "1-7"
+		hubGroupID = "22c600f0-a829-45ee-941e-411236e364cf"
+		hubUserID  = "3484732c-7dc8-41d3-a386-46b0e2c28729"
+	)
+
+	tests := []struct {
+		name         string
+		groupID      string
+		userID       string
+		resolveFails int
+		remove       bool
+		wantErr      bool
+		wantPath     string
+	}{
+		{name: "add resolves youtrack ids", groupID: ytGroupID, userID: ytUserID, wantPath: "/api/usergroups/" + hubGroupID + "/users"},
+		{name: "add keeps hub ids", groupID: hubGroupID, userID: hubUserID, wantPath: "/api/usergroups/" + hubGroupID + "/users"},
+		{name: "remove resolves youtrack ids", groupID: ytGroupID, userID: ytUserID, remove: true, wantPath: "/api/usergroups/" + hubGroupID + "/users/" + hubUserID},
+		{name: "lookup error is returned", groupID: ytGroupID, userID: ytUserID, resolveFails: http.StatusInternalServerError, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var membershipPath string
+			client, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					if tc.resolveFails != 0 {
+						w.WriteHeader(tc.resolveFails)
+						return
+					}
+					switch r.URL.Path {
+					case "/api/groups/" + ytGroupID:
+						// Serves both the ringId lookup and the membership read-back.
+						group := map[string]any{"id": ytGroupID, "ringId": hubGroupID, "ownUsers": []map[string]string{}}
+						if !tc.remove {
+							group["ownUsers"] = []map[string]string{{"id": ytUserID, "ringId": hubUserID}}
+						}
+						encodeJSON(t, w, group)
+					case "/api/users/" + ytUserID:
+						encodeJSON(t, w, map[string]string{"id": ytUserID, "ringId": hubUserID})
+					default:
+						t.Errorf("unexpected lookup: %s", r.URL.Path)
+						w.WriteHeader(http.StatusNotFound)
+					}
+					return
+				}
+
+				membershipPath = r.URL.Path
+				if r.Method == http.MethodPost {
+					body, _ := io.ReadAll(r.Body)
+					if !strings.Contains(string(body), hubUserID) {
+						t.Errorf("request body does not contain hub user id: %s", body)
+					}
+				}
+				w.WriteHeader(http.StatusNoContent)
+			})
+			defer server.Close()
+
+			var err error
+			if tc.remove {
+				err = client.RemoveUserFromGroup(context.Background(), tc.groupID, tc.userID)
+			} else {
+				err = client.AddUserToGroup(context.Background(), tc.groupID, tc.userID)
+			}
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal(errExpectedError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf(fmtUnexpectedError, err)
+			}
+			if membershipPath != tc.wantPath {
+				t.Fatalf("membership call went to %q, want %q", membershipPath, tc.wantPath)
+			}
+		})
+	}
+}
+
 // --- RemoveUserFromGroup ---
 
 func TestRemoveUserFromGroup(t *testing.T) {

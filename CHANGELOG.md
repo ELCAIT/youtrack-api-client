@@ -1,3 +1,13 @@
+## 1.16.1
+BUG FIXES:
+- `AddUserToGroup` and `RemoveUserFromGroup` work again on YouTrack 2026.3, where Hub's membership endpoints only
+  accept Hub ids and answer a YouTrack id (such as the one `CreateGroup` returns) with 404 or 405 on every endpoint
+  variant, so adding a member failed with `405 Method Not Allowed`. A group or user id in YouTrack's format
+  (`4-241`) is now resolved to its Hub id (`ringId`) first; a Hub id is used as is, without an extra request.
+- When the group is given by its YouTrack id, both calls now wait until YouTrack reports the membership change,
+  bounded like the other read-backs: YouTrack picks up a Hub membership change asynchronously, so a `GetGroupByID`
+  right after the call could still show the previous members.
+
 ## 1.16.0
 FEATURES:
 - Add the color of an enum and of a state bundle value: `EnumBundleElement.Color`, `EnumBundleValueUpdate.Color`,

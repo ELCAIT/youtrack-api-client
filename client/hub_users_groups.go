@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -21,6 +22,8 @@ const (
 	hubGroupUsersNoFields    = "%s/%s/%s/users"
 	hubGroupUserPathFormat   = "%s/%s/%s/users/%s"
 	hubUserGroupPathFormat   = "%s/%s/%s/groups/%s"
+	ringIDFields             = "fields=ringId"
+	groupOwnUsersFields      = "fields=ownUsers(id,ringId)"
 )
 
 func isRetryableMembershipEndpointError(err error) bool {
@@ -34,6 +37,78 @@ func isRetryableMembershipEndpointError(err error) bool {
 	}
 
 	return httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusMethodNotAllowed
+}
+
+// isYouTrackEntityID reports whether id has the shape of a YouTrack database id,
+// "<type>-<number>" such as "4-241", as opposed to a Hub id, which is a UUID.
+func isYouTrackEntityID(id string) bool {
+	typ, num, found := strings.Cut(id, "-")
+	return found && isDigits(typ) && isDigits(num)
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// resolveHubID returns the Hub id of a YouTrack user or group, read from its ringId.
+//
+// Hub's membership endpoints only know Hub ids: from YouTrack 2026.3, a YouTrack id
+// such as the one CreateGroup returns is answered with 404 or 405 on every endpoint
+// variant. An id that is not in YouTrack's format is taken to be a Hub id already and
+// returned unchanged, and so is one YouTrack does not know or reports without a ringId,
+// leaving the membership endpoints to decide.
+func (c *Client) resolveHubID(ctx context.Context, apiPath, id string) (string, error) {
+	if !isYouTrackEntityID(id) {
+		return id, nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(hubSpecificUserPath, c.HostURL, apiPath, url.PathEscape(id), ringIDFields), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create resolve hub id request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if isRetryableMembershipEndpointError(err) {
+		return id, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve hub id of %q: %w", id, err)
+	}
+
+	var entity struct {
+		RingID string `json:"ringId"`
+	}
+	if err := json.Unmarshal(body, &entity); err != nil {
+		return "", fmt.Errorf("failed to unmarshal ringId of %q: %w", id, err)
+	}
+	if entity.RingID == "" {
+		return id, nil
+	}
+
+	return entity.RingID, nil
+}
+
+// resolveMembershipIDs returns the Hub ids of a group and a user for a membership call.
+func (c *Client) resolveMembershipIDs(ctx context.Context, groupID, userID string) (string, string, error) {
+	hubGroupID, err := c.resolveHubID(ctx, youtrackGroupsAPIPath, groupID)
+	if err != nil {
+		return "", "", err
+	}
+
+	hubUserID, err := c.resolveHubID(ctx, youtrackUsersAPIPath, userID)
+	if err != nil {
+		return "", "", err
+	}
+
+	return hubGroupID, hubUserID, nil
 }
 
 func (c *Client) sendMembershipRequest(ctx context.Context, method, endpoint string, body []byte) error {
@@ -209,7 +284,29 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 }
 
 // AddUserToGroup adds a user to a group using Hub usergroups endpoints.
+//
+// groupID and userID may be Hub ids or YouTrack ids; a YouTrack id is resolved to the
+// Hub id (its ringId) first, since the Hub endpoints do not accept it.
+//
+// When groupID is a YouTrack id, it also waits for YouTrack to report the user as a
+// member: YouTrack picks up a Hub membership change asynchronously, so a group read
+// issued right after the write would otherwise still show the previous members.
 func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) error {
+	hubGroupID, hubUserID, err := c.resolveMembershipIDs(ctx, groupID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to add user to group: %w", err)
+	}
+
+	if err := c.addHubMembership(ctx, hubGroupID, hubUserID); err != nil {
+		return err
+	}
+
+	return c.awaitYouTrackMembership(ctx, groupID, userID, hubUserID, true)
+}
+
+// addHubMembership adds a user to a group, both given by their Hub id, trying each
+// known endpoint variant in turn.
+func (c *Client) addHubMembership(ctx context.Context, groupID, userID string) error {
 	userPayload := Holder{Id: userID}
 	userRB, err := json.Marshal(userPayload)
 	if err != nil {
@@ -329,7 +426,25 @@ func (c *Client) AddUserToGroup(ctx context.Context, groupID, userID string) err
 }
 
 // RemoveUserFromGroup removes a user from a group using Hub usergroups endpoints.
+//
+// groupID and userID may be Hub ids or YouTrack ids, and a YouTrack groupID is read
+// back until the user is gone, as for AddUserToGroup.
 func (c *Client) RemoveUserFromGroup(ctx context.Context, groupID, userID string) error {
+	hubGroupID, hubUserID, err := c.resolveMembershipIDs(ctx, groupID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to remove user from group: %w", err)
+	}
+
+	if err := c.removeHubMembership(ctx, hubGroupID, hubUserID); err != nil {
+		return err
+	}
+
+	return c.awaitYouTrackMembership(ctx, groupID, userID, hubUserID, false)
+}
+
+// removeHubMembership removes a user from a group, both given by their Hub id, trying
+// each known endpoint variant in turn.
+func (c *Client) removeHubMembership(ctx context.Context, groupID, userID string) error {
 	attempts := []string{
 		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, hubUserGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
 		fmt.Sprintf(hubGroupUserPathFormat, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), url.PathEscape(userID)),
@@ -352,4 +467,58 @@ func (c *Client) RemoveUserFromGroup(ctx context.Context, groupID, userID string
 	// Remove is idempotent: if all known endpoint variants returned 404/405,
 	// the membership is effectively absent.
 	return nil
+}
+
+// awaitYouTrackMembership waits, when groupID is a YouTrack id, until YouTrack reports
+// whether the user is a member of the group as wantMember says. The user is matched by
+// the id the caller gave or by its Hub id, whichever kind the caller used.
+//
+// A failed read ends the wait without an error: the membership write was already
+// acknowledged by Hub, which is what the caller asked for.
+func (c *Client) awaitYouTrackMembership(ctx context.Context, groupID, userID, hubUserID string, wantMember bool) error {
+	if !isYouTrackEntityID(groupID) {
+		return nil
+	}
+
+	err := awaitAsyncProcessing(ctx, func(attemptCtx context.Context) bool {
+		isMember, readErr := c.isYouTrackGroupMember(attemptCtx, groupID, userID, hubUserID)
+		return readErr != nil || isMember == wantMember
+	})
+	if err != nil {
+		return fmt.Errorf("failed to wait for group membership to be applied: %w", err)
+	}
+
+	return nil
+}
+
+// isYouTrackGroupMember reports whether YouTrack lists the user among the group's own
+// users, matching it by YouTrack id or by Hub id.
+func (c *Client) isYouTrackGroupMember(ctx context.Context, groupID, userID, hubUserID string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, httpMethodGet, fmt.Sprintf(specificYoutrackGroup, c.HostURL, youtrackGroupsAPIPath, url.PathEscape(groupID), groupOwnUsersFields), nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create get group members request: %w", err)
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to get group members: %w", err)
+	}
+
+	var group struct {
+		OwnUsers []struct {
+			ID     string `json:"id"`
+			RingID string `json:"ringId"`
+		} `json:"ownUsers"`
+	}
+	if err := json.Unmarshal(body, &group); err != nil {
+		return false, fmt.Errorf("failed to unmarshal group members: %w", err)
+	}
+
+	for _, u := range group.OwnUsers {
+		if u.ID == userID || u.RingID == hubUserID {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
